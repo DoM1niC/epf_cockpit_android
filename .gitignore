@@ -1,0 +1,23 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Build outputs
+/release/*.apk
+/app/build/
+build/
+
+# Keystores & secrets
+*.jks
+*.keystore
+keystore.properties
+
+# Wrapper jar — bootstrapped via `gradle wrapper` locally; CI uses actions/setup-java
+# gradle/wrapper/gradle-wrapper.jar  # ← keep this NOT ignored once you've bootstrapped

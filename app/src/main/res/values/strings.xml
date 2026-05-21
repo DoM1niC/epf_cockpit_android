@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">EPF Cockpit</string>
+
+    <string name="scan_title">Scooter suchen</string>
+    <string name="scan_subtitle">Schalte deinen EPF Pulse Plus ein und warte bis er hier erscheint.</string>
+    <string name="scan_again">Erneut suchen</string>
+    <string name="scan_no_devices">Noch nichts gefunden…</string>
+    <string name="permission_required">Bluetooth-Berechtigung erforderlich</string>
+    <string name="permission_grant">Berechtigung erteilen</string>
+
+    <string name="pin_title">PIN eingeben</string>
+    <string name="pin_subtitle">Standard ab Werk: 888888</string>
+    <string name="pin_unlock">Entsperren</string>
+    <string name="pin_remember">PIN speichern</string>
+    <string name="pin_wrong">Falsche PIN</string>
+
+    <string name="dash_speed">Geschwindigkeit</string>
+    <string name="dash_battery">Akku</string>
+    <string name="dash_power">Leistung</string>
+    <string name="dash_voltage">Spannung</string>
+    <string name="dash_current">Strom</string>
+    <string name="dash_temp">Controller-Temp</string>
+    <string name="dash_trip">Trip</string>
+    <string name="dash_total">Gesamt</string>
+    <string name="dash_gear">Gang</string>
+
+    <string name="ctrl_lock">Sperren</string>
+    <string name="ctrl_unlock">Entsperren</string>
+    <string name="ctrl_light">Licht</string>
+    <string name="ctrl_trip_reset">Trip-Reset</string>
+
+    <string name="settings_title">Einstellungen</string>
+    <string name="settings_gears">Max-Geschwindigkeiten</string>
+    <string name="settings_pin">PIN ändern</string>
+    <string name="settings_forget">Scooter vergessen</string>
+    <string name="settings_auto_connect">Automatisch verbinden</string>
+
+    <string name="history_title">Fahrten</string>
+    <string name="history_empty">Noch keine Fahrten aufgezeichnet.</string>
+
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_history">Fahrten</string>
+    <string name="nav_settings">Einstellungen</string>
+</resources>

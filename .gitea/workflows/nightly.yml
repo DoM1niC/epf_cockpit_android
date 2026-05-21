@@ -1,0 +1,169 @@
+name: Nightly Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Erforderliche Repo-Secrets (Settings → Actions → Secrets):
+#   RELEASE_KEYSTORE_BASE64   # base64-kodierter .jks-Keystore.
+#                             # Auf der Runner-Host-Maschine erzeugen:
+#                             #   base64 -w0 /home/src/android/apk_key.jks
+#                             # Den Output dann ins Gitea-Secret kopieren.
+#   RELEASE_STORE_PASSWORD    # Store-Passwort
+#   RELEASE_KEY_ALIAS         # Schlüssel-Alias
+#   RELEASE_KEY_PASSWORD      # Key-Passwort
+# Optional (sonst wird github.token genutzt):
+#   GITEA_TOKEN               # PAT mit `write:repository`-Scope
+
+jobs:
+  nightly-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup JDK 21
+        # AGP 8.x mit Android-SDK 35/36 erwartet jlink aus JDK 21 für die
+        # core-for-system-modules.jar-Transform. sourceCompatibility bleibt
+        # 17 — JDK 21 kann Bytecode für Java 17 emittieren.
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', 'gradle/libs.versions.toml') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Gradle-Wrapper bootstrappen, falls Wrapper-Jar fehlt
+        run: |
+          set -euo pipefail
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "gradle-wrapper.jar fehlt — bootstrappen via setup-gradle"
+          fi
+
+      - name: Setup Gradle (cached wrapper)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.11.1
+
+      - name: Keystore dekodieren + local.properties schreiben
+        env:
+          KS_B64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          KS_STORE_PW: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KS_KEY_PW: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KS_B64:-}" ] || [ -z "${KS_STORE_PW:-}" ] \
+             || [ -z "${KS_ALIAS:-}" ] || [ -z "${KS_KEY_PW:-}" ]; then
+            echo "FEHLER: Mindestens eines der Secrets RELEASE_KEYSTORE_BASE64 /" >&2
+            echo "        RELEASE_STORE_PASSWORD / RELEASE_KEY_ALIAS /"            >&2
+            echo "        RELEASE_KEY_PASSWORD ist nicht gesetzt."                 >&2
+            exit 1
+          fi
+          KEYSTORE_FILE="$(pwd)/release.jks"
+          printf '%s' "$KS_B64" | base64 -d > "$KEYSTORE_FILE"
+          chmod 600 "$KEYSTORE_FILE"
+          if [ ! -s "$KEYSTORE_FILE" ]; then
+            echo "FEHLER: Dekodierter Keystore ist leer — Secret-Inhalt prüfen." >&2
+            exit 1
+          fi
+          cat > local.properties <<EOF
+          sdk.dir=$ANDROID_HOME
+          RELEASE_STORE_FILE=$KEYSTORE_FILE
+          RELEASE_STORE_PASSWORD=$KS_STORE_PW
+          RELEASE_KEY_ALIAS=$KS_ALIAS
+          RELEASE_KEY_PASSWORD=$KS_KEY_PW
+          EOF
+          echo "Keystore-Größe: $(wc -c < "$KEYSTORE_FILE") Bytes"
+
+      - name: Build signierte Release-APK
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - name: APK umbenennen
+        id: apk
+        run: |
+          set -euo pipefail
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VNAME=$(grep -E 'versionName *=' app/build.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          NAME="epf-cockpit-nightly-${VNAME}.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$NAME"
+          ls -la "$NAME"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "vname=$VNAME" >> "$GITHUB_OUTPUT"
+
+      - name: Nightly-Release auf Gitea neu erzeugen
+        env:
+          TOKEN: ${{ secrets.GITEA_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
+          SHA: ${{ github.sha }}
+          SHORT_SHA: ${{ steps.apk.outputs.short_sha }}
+          VNAME: ${{ steps.apk.outputs.vname }}
+          APK: ${{ steps.apk.outputs.name }}
+        run: |
+          set -euo pipefail
+          AUTH_TOKEN="${TOKEN:-$GH_TOKEN}"
+          if [ -z "$AUTH_TOKEN" ]; then
+            echo "Kein API-Token verfügbar (weder secrets.GITEA_TOKEN noch github.token)." >&2
+            exit 1
+          fi
+
+          if ! command -v jq >/dev/null; then
+            (sudo apt-get update -qq && sudo apt-get install -y -qq jq) \
+              || (apt-get update -qq && apt-get install -y -qq jq)
+          fi
+
+          # 1) Existierendes "nightly"-Release suchen und löschen.
+          REL_ID=$(curl -s -H "Authorization: token $AUTH_TOKEN" \
+            "$API/releases/tags/nightly" | jq -r '.id // empty')
+          if [ -n "$REL_ID" ]; then
+            echo "Lösche altes Nightly-Release #$REL_ID"
+            curl -sSf -X DELETE -H "Authorization: token $AUTH_TOKEN" \
+              "$API/releases/$REL_ID"
+          fi
+
+          # 2) Tag (nightly) entfernen, damit target_commitish neu greift.
+          curl -s -X DELETE -H "Authorization: token $AUTH_TOKEN" \
+            "$API/tags/nightly" >/dev/null || true
+
+          # 3) Neues Release anlegen.
+          BODY=$(printf 'Automatischer Nightly-Build aus Commit `%s` (v%s).\n\nSigniert mit Release-Keystore. Ersetzt eine bestehende Installation in-place.' \
+            "$SHORT_SHA" "$VNAME")
+          REL_PAYLOAD=$(jq -n \
+            --arg tag "nightly" \
+            --arg name "Nightly v$VNAME ($SHORT_SHA)" \
+            --arg body "$BODY" \
+            --arg target "$SHA" \
+            '{tag_name:$tag, name:$name, body:$body, target_commitish:$target, prerelease:true, draft:false}')
+          NEW_REL_ID=$(curl -sSf -X POST \
+            -H "Authorization: token $AUTH_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$REL_PAYLOAD" \
+            "$API/releases" | jq -r '.id')
+          echo "Neues Release: #$NEW_REL_ID"
+
+          # 4) APK als Asset hochladen.
+          curl -sSf -X POST \
+            -H "Authorization: token $AUTH_TOKEN" \
+            -F "attachment=@$APK" \
+            "$API/releases/$NEW_REL_ID/assets?name=$APK" >/dev/null
+          echo "APK $APK hochgeladen."
+
+      - name: Aufräumen
+        if: always()
+        run: rm -f local.properties release.jks
