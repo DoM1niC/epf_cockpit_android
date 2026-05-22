@@ -56,10 +56,10 @@ class EpfConnectionService : Service() {
                 .collect { (t, c) ->
                     val title = when (c) {
                         is ConnectionState.Connected ->
-                            if (c.authenticated) "Cockpit verbunden" else "Cockpit – nicht authentifiziert"
-                        is ConnectionState.Connecting -> "Cockpit verbindet…"
-                        is ConnectionState.Failed -> "Cockpit – ${c.reason}"
-                        ConnectionState.Disconnected -> "Cockpit getrennt"
+                            if (c.authenticated) "E-Scooter verbunden" else "E-Scooter – nicht authentifiziert"
+                        is ConnectionState.Connecting -> "E-Scooter verbindet…"
+                        is ConnectionState.Failed -> "E-Scooter – ${c.reason}"
+                        ConnectionState.Disconnected -> "E-Scooter getrennt"
                     }
                     val body = if (t != null) {
                         "%.1f km/h  •  Akku %d%%  •  %d W".format(t.speedKmh, t.batteryPercent, t.watts.toInt())
@@ -72,9 +72,12 @@ class EpfConnectionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // START_STICKY damit Android den Service nach OOM-Kill wieder hochzieht,
-        // solange wir nicht explizit stopSelf() rufen.
-        return START_STICKY
+        // START_NOT_STICKY: nach Process-Death soll Android den Service NICHT
+        // automatisch wieder hochziehen — sonst kommt die Notification nach
+        // `exitProcess` aus onTaskRemoved sofort als "Cockpit getrennt" zurück.
+        // Trade-off: bei rare OOM-Kill ist der Service auch weg. FGS sind
+        // praktisch nie OOM-Opfer, der Trade-off ist es wert.
+        return START_NOT_STICKY
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -82,7 +85,11 @@ class EpfConnectionService : Service() {
         Log.i(TAG, "task removed — full shutdown")
         // 1) BLE sauber trennen (Heartbeat-Job stoppt, requestDisconnect)
         runCatching { ble.disconnect() }
-        // 2) Notification weg, Service stoppen
+        // 2) Notification explizit entfernen, BEVOR der Process stirbt.
+        //    Ohne STOP_FOREGROUND_REMOVE bleibt sie kurz als "Cockpit getrennt"
+        //    sichtbar weil der NotificationManager noch nichts vom Service-
+        //    Ende mitbekommen hat.
+        stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         // 3) Coroutines killen
         scope.cancel()
@@ -99,7 +106,7 @@ class EpfConnectionService : Service() {
 
     // --- Notification helpers ------------------------------------------------
 
-    private fun initialNotification() = buildNotification("Cockpit startet…", "Warte auf Telemetrie…")
+    private fun initialNotification() = buildNotification("E-Scooter startet…", "Warte auf Telemetrie…")
 
     private fun buildNotification(title: String, body: String): android.app.Notification {
         val tapIntent = Intent(this, MainActivity::class.java).apply {
