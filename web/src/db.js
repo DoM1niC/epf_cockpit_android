@@ -132,3 +132,43 @@ export function getTrip(id) {
 export function getTripSamples(id) {
   return stmts.getTripSamples.all(id);
 }
+
+/**
+ * Telemetry-Samples in [from, to] (in ms). Wenn die Anzahl > `max`, wird
+ * per Bucket-Average auf ~max Punkte runtergedampft. Damit funktionieren
+ * auch grosse Zeitraeume (7d ~= 3M Rows roh) ohne Browser-OOM.
+ */
+export function getTelemetryInRange(from, to, max) {
+  const count = db.prepare(
+    `SELECT COUNT(*) AS c FROM telemetry WHERE ts BETWEEN ? AND ?`
+  ).get(from, to).c;
+  if (count === 0) return [];
+  if (count <= max) {
+    return db.prepare(`
+      SELECT ts,
+             speed_kmh        AS speedKmh,
+             power_w          AS powerW,
+             battery_percent  AS batteryPercent,
+             voltage_v        AS voltageV,
+             current_a        AS currentA
+        FROM telemetry
+       WHERE ts BETWEEN ? AND ?
+       ORDER BY ts ASC
+    `).all(from, to);
+  }
+  // Bucket-Avg-Downsample. Bucket-Center als ts zurueckgeben, damit der
+  // Chart die x-Werte zentriert ueber dem Bucket sieht.
+  const bucketMs = Math.max(1, Math.ceil((to - from) / max));
+  return db.prepare(`
+    SELECT (CAST(ts/? AS INTEGER) * ? + ?/2) AS ts,
+           AVG(speed_kmh)        AS speedKmh,
+           AVG(power_w)          AS powerW,
+           AVG(battery_percent)  AS batteryPercent,
+           AVG(voltage_v)        AS voltageV,
+           AVG(current_a)        AS currentA
+      FROM telemetry
+     WHERE ts BETWEEN ? AND ?
+     GROUP BY CAST(ts/? AS INTEGER)
+     ORDER BY ts ASC
+  `).all(bucketMs, bucketMs, bucketMs, from, to, bucketMs);
+}

@@ -6,8 +6,27 @@
 (function () {
   'use strict';
 
-  const WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+  const WINDOW_MS = 5 * 60 * 1000; // 5 minutes (live buffer)
   const buf = { ts: [], speed: [], power: [] };
+
+  // Time-range presets for the chart selector. "live" = use the rolling
+  // in-memory buffer driven by the WS stream; everything else = one-shot
+  // fetch from /api/telemetry, charts then stay frozen until the user
+  // picks a new range (or "Live").
+  const RANGE_PRESETS = [
+    { id: 'live5m', label: 'Live 5m', ms: 5 * 60_000,           live: true  },
+    { id: 'm15',    label: '15 min',  ms: 15 * 60_000,          live: false },
+    { id: 'h1',     label: '1 h',     ms: 60 * 60_000,          live: false },
+    { id: 'h6',     label: '6 h',     ms: 6 * 60 * 60_000,      live: false },
+    { id: 'h24',    label: '24 h',    ms: 24 * 60 * 60_000,     live: false },
+    { id: 'd7',     label: '7 d',     ms: 7 * 24 * 60 * 60_000, live: false },
+  ];
+  let activeRange = RANGE_PRESETS[0];
+  // Wenn nicht-live: gefrorenes from/to-Fenster, damit die Achsen-range()
+  // nicht weiterwandert während der User den Chart anschaut.
+  let frozenFrom = null;
+  let frozenTo = null;
+  const isLive = () => activeRange.live;
 
   // uPlot Default-Werte sind US-locale (12h + M/D/YY). EU-Variante mit 24h-Zeit.
   // Das Tick-Default ist *self-contained* (z.B. "19:52:03"), die Kontext-Zeile
@@ -57,13 +76,15 @@
       scales: {
         x: {
           time: true,
-          // Live-Chart immer aufs 5-Min-Fenster pinnen — sonst zoomt uPlot
-          // bei spärlichen Daten bis runter auf Sekunden-Ticks und die
-          // Achse wirkt wie eine ganz andere Zeitskala. range() wird auf
-          // jedem setData neu ausgewertet, also wandert das Fenster live mit.
+          // Im Live-Mode pinnen wir das Fenster auf "letzte 5 Min" und es
+          // wandert mit der Zeit mit. Im History-Mode haben wir nach dem
+          // Fetch ein gefrorenes from/to gesetzt — das nutzen wir hier dann.
           range: () => {
-            const now = Date.now() / 1000;
-            return [now - WINDOW_MS / 1000, now];
+            if (isLive()) {
+              const now = Date.now() / 1000;
+              return [now - WINDOW_MS / 1000, now];
+            }
+            return [frozenFrom / 1000, frozenTo / 1000];
           },
         },
       },
@@ -112,9 +133,75 @@
       buf.speed.shift();
       buf.power.shift();
     }
-    chartSpeed.setData([buf.ts, buf.speed]);
-    chartPower.setData([buf.ts, buf.power]);
+    // Im History-Mode den Chart NICHT mit Live-Punkten überschreiben — der
+    // User schaut sich gerade einen festen Zeitraum an, die Tiles sollen
+    // aber weiter live laufen (das passiert in applyTelemetry, nicht hier).
+    if (isLive()) {
+      chartSpeed.setData([buf.ts, buf.speed]);
+      chartPower.setData([buf.ts, buf.power]);
+    }
   }
+
+  // ---------- Range-Chips ----------
+  function renderChips() {
+    const host = $('range-chips');
+    if (!host) return;
+    host.innerHTML = RANGE_PRESETS.map(p => {
+      const active = p.id === activeRange.id;
+      const cls = active
+        ? 'bg-[var(--color-brand-teal)] text-black'
+        : 'bg-[var(--color-surface-2)] text-[var(--color-on-surface-dim)] hover:text-white';
+      return `<button data-range="${p.id}" class="range-chip text-xs px-3 py-1 rounded-full ${cls}">${p.label}</button>`;
+    }).join('');
+    host.querySelectorAll('.range-chip').forEach(btn => {
+      btn.addEventListener('click', () => applyRange(btn.dataset.range));
+    });
+  }
+
+  function setRangeStatus(text) {
+    const el = $('range-status');
+    if (el) el.textContent = text || '';
+  }
+
+  async function applyRange(id) {
+    const next = RANGE_PRESETS.find(p => p.id === id) || RANGE_PRESETS[0];
+    activeRange = next;
+    renderChips();
+
+    if (next.live) {
+      frozenFrom = null;
+      frozenTo = null;
+      setRangeStatus('Live');
+      chartSpeed.setData([buf.ts, buf.speed]);
+      chartPower.setData([buf.ts, buf.power]);
+      return;
+    }
+
+    setRangeStatus('Lade…');
+    const to = Date.now();
+    const from = to - next.ms;
+    try {
+      const r = await window.EpfAuth.fetchAuthed(
+        `/api/telemetry?from=${from}&to=${to}&max=600`
+      );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const { samples } = await r.json();
+      frozenFrom = from;
+      frozenTo = to;
+      const xs = samples.map(s => s.ts / 1000);
+      const speed = samples.map(s => s.speedKmh);
+      const power = samples.map(s => s.powerW);
+      chartSpeed.setData([xs, speed]);
+      chartPower.setData([xs, power]);
+      setRangeStatus(`${samples.length} Punkte`);
+    } catch (err) {
+      console.warn('range fetch failed:', err);
+      setRangeStatus('Fehler – siehe Console');
+    }
+  }
+
+  renderChips();
+  setRangeStatus('Live');
 
   // ---------- Connection indicator ----------
   function applyState(state) {

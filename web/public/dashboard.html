@@ -72,15 +72,22 @@
       </span>
     </section>
 
-    <!-- Charts -->
-    <section class="grid md:grid-cols-2 gap-3 sm:gap-4">
-      <div class="rounded-2xl bg-[var(--color-surface-1)] p-3 sm:p-4">
-        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mb-2">Speed (last 5 min)</div>
-        <div id="chart-speed" class="w-full"></div>
+    <!-- Charts mit Zeitraum-Auswahl -->
+    <section class="grid gap-3 sm:gap-4">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mr-1">Zeitraum</span>
+        <div id="range-chips" class="flex gap-1.5 flex-wrap"></div>
+        <span id="range-status" class="ml-auto text-xs text-[var(--color-on-surface-dim)]"></span>
       </div>
-      <div class="rounded-2xl bg-[var(--color-surface-1)] p-3 sm:p-4">
-        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mb-2">Power (last 5 min)</div>
-        <div id="chart-power" class="w-full"></div>
+      <div class="grid md:grid-cols-2 gap-3 sm:gap-4">
+        <div class="rounded-2xl bg-[var(--color-surface-1)] p-3 sm:p-4">
+          <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mb-2">Speed</div>
+          <div id="chart-speed" class="w-full"></div>
+        </div>
+        <div class="rounded-2xl bg-[var(--color-surface-1)] p-3 sm:p-4">
+          <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mb-2">Power</div>
+          <div id="chart-power" class="w-full"></div>
+        </div>
       </div>
     </section>
   </main>
