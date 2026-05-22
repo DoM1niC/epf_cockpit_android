@@ -10,6 +10,10 @@ interface TripDao {
     @Query("SELECT * FROM trips ORDER BY endedAt DESC")
     fun observeAll(): Flow<List<Trip>>
 
+    /** One-shot read für den TripSyncer (Backfill an den Web-Server). */
+    @Query("SELECT * FROM trips ORDER BY endedAt ASC")
+    suspend fun getAll(): List<Trip>
+
     @Insert
     suspend fun insert(trip: Trip): Long
 

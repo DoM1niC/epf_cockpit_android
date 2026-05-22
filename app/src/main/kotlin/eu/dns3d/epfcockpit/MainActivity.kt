@@ -14,6 +14,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import eu.dns3d.epfcockpit.data.SettingsStore
 import eu.dns3d.epfcockpit.data.ThemeMode
 import eu.dns3d.epfcockpit.data.TripCoordinator
+import eu.dns3d.epfcockpit.data.TripSyncer
 import eu.dns3d.epfcockpit.service.ForegroundController
 import eu.dns3d.epfcockpit.streaming.TelemetryStreamer
 import eu.dns3d.epfcockpit.ui.nav.AppNav
@@ -33,6 +34,7 @@ class MainActivity : ComponentActivity() {
     @Suppress("unused") @Inject lateinit var streamer: TelemetryStreamer
     @Suppress("unused") @Inject lateinit var foregroundController: ForegroundController
     @Suppress("unused") @Inject lateinit var tripCoordinator: TripCoordinator
+    @Suppress("unused") @Inject lateinit var tripSyncer: TripSyncer
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()

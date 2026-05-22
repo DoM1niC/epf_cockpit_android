@@ -290,37 +290,94 @@ class BleRepository @Inject constructor(
                 return@launch
             }
             val savedName = snap.lastScooterName
+            val savedPin = snap.savedPin
 
-            Log.i(TAG, "auto-reconnect phase 1: direct connect to $savedAddr")
-            // Phase 1: direkter Connect auf alte MAC
-            try {
-                withTimeoutOrNull(6_000L) { connect(savedAddr) }
-            } catch (_: kotlinx.coroutines.CancellationException) {
-                return@launch
-            } catch (t: Throwable) {
-                Log.w(TAG, "auto-reconnect phase 1 failed: ${t.message}")
-            }
-            if (_connection.value is ConnectionState.Connected) return@launch
+            // Loop forever (mit Exponential-Backoff) bis entweder:
+            //   - wir erfolgreich connected sind, oder
+            //   - der User manuell trennt (userDisconnected = true), oder
+            //   - der Scope gecancelt wird (App-Shutdown)
+            // Sonst muss der User manuell auf "Suchen" tippen sobald der
+            // Scooter wieder an ist — genau die Beschwerde aus dem Bug-Report.
+            var attempt = 0
+            while (isActive && !userDisconnected) {
+                attempt++
+                // Falls jemand parallel manuell connected hat — beenden.
+                if (_connection.value is ConnectionState.Connected) {
+                    reauthenticateIfPossible(savedPin)
+                    return@launch
+                }
 
-            // Phase 2: Scan-by-Name
-            Log.i(TAG, "auto-reconnect phase 2: scan by name '$savedName'")
-            val match = try {
-                withTimeoutOrNull(15_000L) {
-                    scan(scootersOnly = true).firstOrNull { found ->
-                        (!savedName.isNullOrBlank() &&
-                            found.name?.equals(savedName, ignoreCase = true) == true) ||
-                            found.address.equals(savedAddr, ignoreCase = true)
+                Log.i(TAG, "auto-reconnect attempt #$attempt — phase 1 (direct to $savedAddr)")
+                try {
+                    withTimeoutOrNull(6_000L) { connect(savedAddr) }
+                } catch (_: kotlinx.coroutines.CancellationException) {
+                    return@launch
+                } catch (t: Throwable) {
+                    Log.w(TAG, "phase 1 failed: ${t.message}")
+                }
+                if (_connection.value is ConnectionState.Connected) {
+                    reauthenticateIfPossible(savedPin)
+                    return@launch
+                }
+
+                Log.i(TAG, "auto-reconnect attempt #$attempt — phase 2 (scan by name '$savedName')")
+                val match = try {
+                    withTimeoutOrNull(10_000L) {
+                        scan(scootersOnly = true).firstOrNull { found ->
+                            (!savedName.isNullOrBlank() &&
+                                found.name?.equals(savedName, ignoreCase = true) == true) ||
+                                found.address.equals(savedAddr, ignoreCase = true)
+                        }
+                    }
+                } catch (_: kotlinx.coroutines.CancellationException) {
+                    return@launch
+                } catch (t: Throwable) {
+                    Log.w(TAG, "phase 2 scan failed: ${t.message}")
+                    null
+                }
+                if (match != null) {
+                    settings.rememberScooter(match.address, match.name)
+                    runCatching { connect(match.address) }
+                    if (_connection.value is ConnectionState.Connected) {
+                        reauthenticateIfPossible(savedPin)
+                        return@launch
                     }
                 }
-            } catch (_: kotlinx.coroutines.CancellationException) {
-                return@launch
+
+                // Beide Phasen durch — Scooter ist offline. Backoff zwischen
+                // den Versuchen damit wir nicht ständig das BLE-Radio scannen
+                // (Akku) und nicht im 1-Sekunden-Takt failende GATTs feuern.
+                val delayMs = when (attempt) {
+                    1 -> 10_000L
+                    2 -> 20_000L
+                    3 -> 30_000L
+                    else -> 60_000L
+                }
+                Log.i(TAG, "auto-reconnect attempt #$attempt failed, waiting ${delayMs}ms")
+                kotlinx.coroutines.delay(delayMs)
             }
-            if (match != null) {
-                settings.rememberScooter(match.address, match.name)
-                runCatching { connect(match.address) }
-            } else {
-                Log.i(TAG, "auto-reconnect phase 2: nothing found")
-            }
+        }
+    }
+
+    /**
+     * Nach Auto-Reconnect-Connect die gespeicherte PIN erneut senden — sonst
+     * bleibt der Status auf "Connected (authenticated=false)" und die App
+     * sieht zwar das BLE-Link, aber der Scooter beantwortet keine
+     * Telemetrie-Notifications. Wenn keine PIN gespeichert ist (User hat
+     * den "PIN nicht merken"-Pfad gewählt), bleibt das manueller Pfad.
+     */
+    private fun reauthenticateIfPossible(savedPin: String?) {
+        if (savedPin.isNullOrBlank()) {
+            Log.i(TAG, "post-reconnect: no saved PIN, skipping re-auth")
+            return
+        }
+        Log.i(TAG, "post-reconnect: re-auth with saved PIN")
+        // Kurze Pause, damit der Manager die Init-Phase fertig macht
+        // (initialize() = MTU + Notification-Subscriptions). Vorher wird
+        // sendAt() einen null highTx haben.
+        scope.launch {
+            kotlinx.coroutines.delay(500)
+            authenticate(savedPin)
         }
     }
 

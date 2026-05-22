@@ -10,7 +10,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.max
@@ -40,7 +39,6 @@ class TripCoordinator @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var recorder: TripRecorder? = null
-    private var currentTripId: String? = null
     private var currentScooterAddress: String? = null
 
     init {
@@ -50,9 +48,8 @@ class TripCoordinator @Inject constructor(
                     is ConnectionState.Connected -> {
                         if (recorder == null) {
                             recorder = TripRecorder(conn.address)
-                            currentTripId = UUID.randomUUID().toString()
                             currentScooterAddress = conn.address
-                            Log.i(TAG, "trip armed: id=$currentTripId addr=${conn.address}")
+                            Log.i(TAG, "trip armed: addr=${conn.address}")
                         }
                     }
                     else -> finalizeAndClear()
@@ -68,45 +65,48 @@ class TripCoordinator @Inject constructor(
 
     private suspend fun finalizeAndClear() {
         val r = recorder ?: return
-        val tripId = currentTripId
         val addr = currentScooterAddress
         recorder = null
-        currentTripId = null
         currentScooterAddress = null
 
         val trip = r.snapshot() ?: return  // null nur wenn nie gesamplet
         val persistLocally = trip.distanceKm >= 0.01f
         val now = System.currentTimeMillis()
 
-        if (persistLocally) {
-            runCatching { tripDao.insert(trip) }
-                .onSuccess { Log.i(TAG, "trip persisted (Room): ${trip.distanceKm} km") }
-                .onFailure { Log.w(TAG, "trip persist failed: ${it.message}") }
-        } else {
+        if (!persistLocally) {
             Log.i(TAG, "trip <10m, not persisted locally (distance=${trip.distanceKm})")
+            return
         }
 
-        // An den Server gehen ALLE Fahrten — auch <10m. Server macht den
-        // Insert-Update self-contained, wir brauchen kein vorheriges trip_start.
-        if (tripId != null && persistLocally) {
-            streamer.send(
-                StreamMessage.TripEnd(
-                    tripId = tripId,
-                    startedAt = trip.startedAt,
-                    ts = max(trip.endedAt, now),
-                    distanceKm = trip.distanceKm.toDouble(),
-                    energyWh = trip.energyWh.toDouble(),
-                    durationS = ((trip.endedAt - trip.startedAt) / 1000).coerceAtLeast(0),
-                    maxSpeedKmh = trip.maxSpeedKmh.toDouble(),
-                    avgSpeedKmh = trip.avgSpeedKmh.toDouble(),
-                    scooterAddress = addr,
-                )
+        // Erst lokal persistieren (gibt Room-PK zurück), dann den deterministischen
+        // server-Trip-ID daraus bauen. Damit kann [TripSyncer] dieselben Trips
+        // später idempotent re-pushen ohne Doubletten.
+        val rowId = runCatching { tripDao.insert(trip) }
+            .getOrElse {
+                Log.w(TAG, "trip persist failed: ${it.message}")
+                return
+            }
+        Log.i(TAG, "trip persisted (Room id=$rowId): ${trip.distanceKm} km")
+
+        val tripId = LOCAL_ID_PREFIX + rowId
+        streamer.send(
+            StreamMessage.TripEnd(
+                tripId = tripId,
+                startedAt = trip.startedAt,
+                ts = max(trip.endedAt, now),
+                distanceKm = trip.distanceKm.toDouble(),
+                energyWh = trip.energyWh.toDouble(),
+                durationS = ((trip.endedAt - trip.startedAt) / 1000).coerceAtLeast(0),
+                maxSpeedKmh = trip.maxSpeedKmh.toDouble(),
+                avgSpeedKmh = trip.avgSpeedKmh.toDouble(),
+                scooterAddress = addr,
             )
-            Log.i(TAG, "trip_end streamed: id=$tripId distance=${trip.distanceKm}")
-        }
+        )
+        Log.i(TAG, "trip_end streamed: id=$tripId")
     }
 
-    private companion object {
+    internal companion object {
         const val TAG = "TripCoordinator"
+        const val LOCAL_ID_PREFIX = "local-"
     }
 }
