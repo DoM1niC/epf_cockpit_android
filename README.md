@@ -78,6 +78,15 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
 Nightlies werden automatisch nach jedem Push auf `main` gebaut, sind mit dem
 Release-Keystore signiert und ersetzen eine bestehende Installation in-place.
 
+## Screenshots
+
+| | |
+|---|---|
+| ![Scan-View](screenshots/scan_view.png) | ![Dashboard – Tacho + Akku](screenshots/dashboard_1.png) |
+| Scan: BLE-Suche mit EPF/ePF/ZYD-Filter, Live-RSSI | Dashboard: Speed-Ring + Akku-Donut + Stat-Tiles |
+| ![Dashboard – Steuerung](screenshots/dashboard_2.png) | ![Settings](screenshots/settings.png) |
+| Steuerung: Parking-Switch, Modus-Toggle, Blinkerton | Settings: Theme + Live-Streaming an Web-Dashboard |
+
 ## Technische Dokumentation
 
 Das BLE-Protokoll für den Pulse Plus wurde reverse-engineered, weil die
