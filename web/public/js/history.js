@@ -44,9 +44,9 @@
     if (s == null) return '--';
     const m = Math.floor(s / 60);
     const sec = s % 60;
-    if (m < 60) return `${m}m ${sec}s`;
+    if (m < 60) return `${m} min ${sec} s`;
     const h = Math.floor(m / 60);
-    return `${h}h ${m % 60}m`;
+    return `${h} h ${m % 60} min`;
   }
 
   function fmtNum(v, digits = 1) {
@@ -65,7 +65,7 @@
           <div><dt class="text-[var(--color-on-surface-dim)]">Strecke</dt><dd>${fmtNum(trip.distance_km, 2)} km</dd></div>
           <div><dt class="text-[var(--color-on-surface-dim)]">Dauer</dt><dd>${fmtDuration(trip.duration_s)}</dd></div>
           <div><dt class="text-[var(--color-on-surface-dim)]">Max.</dt><dd>${fmtNum(trip.max_speed_kmh, 1)} km/h</dd></div>
-          <div><dt class="text-[var(--color-on-surface-dim)]">Ø</dt><dd>${fmtNum(trip.avg_speed_kmh, 1)} km/h</dd></div>
+          <div><dt class="text-[var(--color-on-surface-dim)]">Durch. Ø</dt><dd>${fmtNum(trip.avg_speed_kmh, 1)} km/h</dd></div>
           <div><dt class="text-[var(--color-on-surface-dim)]">Energie</dt><dd>${fmtNum(trip.energy_wh, 1)} Wh</dd></div>
         </dl>
         <div class="chart-host mt-4 hidden"></div>

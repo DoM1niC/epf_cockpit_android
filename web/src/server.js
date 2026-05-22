@@ -30,10 +30,21 @@ app.set('trust proxy', 1);
 // Intentionally NOT gated by VIEW_TOKEN — these contain no telemetry, and gating
 // them would break the OBS Browser Source caching story. The data behind /api/*
 // and /ws/live is what's protected.
-app.use('/dist', express.static(path.join(publicDir, 'dist'), { maxAge: '1h' }));
-app.use('/css',  express.static(path.join(publicDir, 'css'),  { maxAge: '1h' }));
-app.use('/js',   express.static(path.join(publicDir, 'js'),   { maxAge: '1h' }));
-app.use('/vendor', express.static(path.join(publicDir, 'vendor'), { maxAge: '1d' }));
+//
+// Cache-Strategie: eigene Assets (/dist, /css, /js) ohne max-age, nur ETag-
+// Revalidation — der Browser sendet If-None-Match, Server antwortet mit 304
+// wenn unverändert (kein Body, paar Bytes). Damit landen npm-run-build-
+// Updates SOFORT beim nächsten Page-Load, ohne dass User Ctrl+F5 drücken
+// muss. Mit dem alten max-age=1h hat selbst Ctrl+F5 in manchen Browsern
+// (Firefox, OBS-CEF) die Asset-Revalidation übersprungen.
+//
+// /vendor (uPlot dist) bleibt mit langer TTL — das ist gepinnter
+// Third-Party-Code, ändert sich nicht zwischen Builds.
+const ownAssetOpts = { maxAge: 0, etag: true, lastModified: true };
+app.use('/dist', express.static(path.join(publicDir, 'dist'),   ownAssetOpts));
+app.use('/css',  express.static(path.join(publicDir, 'css'),    ownAssetOpts));
+app.use('/js',   express.static(path.join(publicDir, 'js'),     ownAssetOpts));
+app.use('/vendor', express.static(path.join(publicDir, 'vendor'), { maxAge: '7d', etag: true, immutable: true }));
 
 // Health probe — public so uptime monitors / k8s / nginx upstream checks work
 // without needing a token. Doesn't leak telemetry.
@@ -41,9 +52,19 @@ app.get('/healthz', (_req, res) => res.type('text/plain').send('ok'));
 
 // View-gated routes: JSON API + HTML pages.
 app.use('/api', requireView, api);
-app.get('/',        requireView, (_req, res) => res.sendFile(path.join(publicDir, 'dashboard.html')));
-app.get('/obs',     requireView, (_req, res) => res.sendFile(path.join(publicDir, 'obs.html')));
-app.get('/history', requireView, (_req, res) => res.sendFile(path.join(publicDir, 'history.html')));
+
+// HTML-Pages bekommen explizit no-cache mit, damit User nach Server-Updates
+// nicht mit ge-cachten Asset-Referenzen oder veralteten DOM-Strukturen
+// hängenbleibt. Die HTML-Files sind winzig, Re-Fetch kostet quasi nichts.
+function sendHtmlNoCache(filePath) {
+  return (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    res.sendFile(filePath);
+  };
+}
+app.get('/',        requireView, sendHtmlNoCache(path.join(publicDir, 'dashboard.html')));
+app.get('/obs',     requireView, sendHtmlNoCache(path.join(publicDir, 'obs.html')));
+app.get('/history', requireView, sendHtmlNoCache(path.join(publicDir, 'history.html')));
 
 const server = http.createServer(app);
 
