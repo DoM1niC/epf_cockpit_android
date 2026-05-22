@@ -209,12 +209,12 @@
     const text = $('conn-text');
     if (state && state.connected) {
       dot.className = 'inline-block w-2.5 h-2.5 rounded-full bg-green-500';
-      dot.title = 'Scooter connected';
-      text.textContent = state.scooterName || 'connected';
+      dot.title = 'Scooter verbunden';
+      text.textContent = state.scooterName || 'verbunden';
     } else {
       dot.className = 'inline-block w-2.5 h-2.5 rounded-full bg-gray-500';
-      dot.title = 'No scooter';
-      text.textContent = 'no scooter';
+      dot.title = 'Kein Scooter';
+      text.textContent = 'Kein Scooter';
     }
     setText('chip-scooter', 'Scooter: ' + (state && state.scooterName ? state.scooterName : '--'));
   }
@@ -227,8 +227,8 @@
     setText('t-volt',  fmt(t.voltageV, 1));
     setText('t-amp',   fmt(t.currentA, 1));
     setText('t-temp',  fmt(t.controllerTempC, 0));
-    setText('chip-parking',  'Parking: '  + (t.parking ? 'on' : 'off'));
-    setText('chip-ridemode', 'Mode: '     + (t.rideModeStand ? 'Stand' : 'Kick'));
+    setText('chip-parking',  'Parking: '  + (t.parking ? 'an' : 'aus'));
+    setText('chip-ridemode', 'Modus: '    + (t.rideModeStand ? 'Stand' : 'Kick'));
     pushPoint(t.ts || Date.now(), t.speedKmh, t.powerW);
   }
 

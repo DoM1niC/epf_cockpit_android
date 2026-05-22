@@ -62,11 +62,11 @@
           <div class="text-sm text-[var(--color-on-surface-dim)]">${trip.scooter_name || ''}</div>
         </header>
         <dl class="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm tabular-nums">
-          <div><dt class="text-[var(--color-on-surface-dim)]">Distance</dt><dd>${fmtNum(trip.distance_km, 2)} km</dd></div>
-          <div><dt class="text-[var(--color-on-surface-dim)]">Duration</dt><dd>${fmtDuration(trip.duration_s)}</dd></div>
-          <div><dt class="text-[var(--color-on-surface-dim)]">Max speed</dt><dd>${fmtNum(trip.max_speed_kmh, 1)} km/h</dd></div>
-          <div><dt class="text-[var(--color-on-surface-dim)]">Avg speed</dt><dd>${fmtNum(trip.avg_speed_kmh, 1)} km/h</dd></div>
-          <div><dt class="text-[var(--color-on-surface-dim)]">Energy</dt><dd>${fmtNum(trip.energy_wh, 1)} Wh</dd></div>
+          <div><dt class="text-[var(--color-on-surface-dim)]">Strecke</dt><dd>${fmtNum(trip.distance_km, 2)} km</dd></div>
+          <div><dt class="text-[var(--color-on-surface-dim)]">Dauer</dt><dd>${fmtDuration(trip.duration_s)}</dd></div>
+          <div><dt class="text-[var(--color-on-surface-dim)]">Max.</dt><dd>${fmtNum(trip.max_speed_kmh, 1)} km/h</dd></div>
+          <div><dt class="text-[var(--color-on-surface-dim)]">Ø</dt><dd>${fmtNum(trip.avg_speed_kmh, 1)} km/h</dd></div>
+          <div><dt class="text-[var(--color-on-surface-dim)]">Energie</dt><dd>${fmtNum(trip.energy_wh, 1)} Wh</dd></div>
         </dl>
         <div class="chart-host mt-4 hidden"></div>
       </article>
@@ -76,18 +76,18 @@
   async function renderTripChart(article, tripId) {
     const host = article.querySelector('.chart-host');
     host.classList.remove('hidden');
-    host.innerHTML = '<div class="text-xs text-[var(--color-on-surface-dim)]">loading…</div>';
+    host.innerHTML = '<div class="text-xs text-[var(--color-on-surface-dim)]">Lade…</div>';
 
     const r = await window.EpfAuth.fetchAuthed(`/api/trips/${encodeURIComponent(tripId)}`);
     if (!r.ok) {
-      host.innerHTML = '<div class="text-xs text-red-400">failed to load trip</div>';
+      host.innerHTML = '<div class="text-xs text-red-400">Fahrt konnte nicht geladen werden</div>';
       return;
     }
     const { samples } = await r.json();
     host.innerHTML = '';
 
     if (!samples || samples.length === 0) {
-      host.innerHTML = '<div class="text-xs text-[var(--color-on-surface-dim)]">no samples</div>';
+      host.innerHTML = '<div class="text-xs text-[var(--color-on-surface-dim)]">Keine Telemetrie-Daten für diese Fahrt</div>';
       return;
     }
 
@@ -207,9 +207,24 @@
       }
       list.innerHTML = trips.map(cardHtml).join('');
       bindCardClicks();
-      // Aggregat-Status für Quick-Glance: Anzahl + Summenstrecke.
-      const totalKm = trips.reduce((s, t) => s + (t.distance_km || 0), 0);
-      setStatus(`${trips.length} Fahrten · ${totalKm.toFixed(1)} km`);
+      // Aggregat-Status für Quick-Glance: Anzahl + Summenstrecke + Gesamt-
+      // Fahrzeit + Gesamt-Energie. Wird oben rechts in der Filter-Leiste
+      // dargestellt; bei schmalem Viewport bricht's um.
+      const totals = trips.reduce((acc, t) => {
+        acc.km += t.distance_km || 0;
+        acc.s += t.duration_s || 0;
+        acc.wh += t.energy_wh || 0;
+        return acc;
+      }, { km: 0, s: 0, wh: 0 });
+      const h = Math.floor(totals.s / 3600);
+      const m = Math.floor((totals.s % 3600) / 60);
+      const time = h > 0 ? `${h} h ${m} min` : `${m} min`;
+      const energy = totals.wh >= 1000
+        ? `${(totals.wh / 1000).toFixed(1)} kWh`
+        : `${totals.wh.toFixed(0)} Wh`;
+      setStatus(
+        `${trips.length} Fahrten · ${totals.km.toFixed(1)} km · ${time} · ${energy}`
+      );
     } catch (err) {
       console.error(err);
       list.innerHTML = '<div class="text-red-400">Fehler beim Laden.</div>';

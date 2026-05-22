@@ -73,13 +73,13 @@ export function requireView(req, res, next) {
   res.status(401);
   if (wantsHtml) {
     res.type('html').send(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>401 — Token required</title>` +
+      `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>401 — Token erforderlich</title>` +
       `<style>body{font:14px/1.4 ui-sans-serif,system-ui;background:#0E1B16;color:#e9ecef;` +
       `padding:48px;max-width:560px;margin:0 auto}h1{color:#6FDBC2;margin:0 0 12px}` +
       `code{background:#1A3D33;color:#FFB300;padding:2px 6px;border-radius:4px}</style></head>` +
-      `<body><h1>Authentication required</h1>` +
-      `<p>This dashboard is access-restricted. Append <code>?token=&lt;your-token&gt;</code> ` +
-      `to the URL, or send an <code>Authorization: Bearer &lt;your-token&gt;</code> header.</p>` +
+      `<body><h1>Anmeldung erforderlich</h1>` +
+      `<p>Dieses Dashboard ist zugriffsgeschützt. Hänge <code>?token=&lt;dein-token&gt;</code> ` +
+      `an die URL an oder sende einen <code>Authorization: Bearer &lt;dein-token&gt;</code>-Header.</p>` +
       `</body></html>`
     );
   } else {

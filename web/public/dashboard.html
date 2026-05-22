@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="h-full">
+<html lang="de" class="h-full">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -12,11 +12,11 @@
     <h1 class="text-lg sm:text-xl font-semibold tracking-tight">EPF Cockpit Live</h1>
     <span id="conn-dot"
           class="inline-block w-2.5 h-2.5 rounded-full bg-gray-500"
-          title="No scooter connected"></span>
-    <span id="conn-text" class="text-sm text-[var(--color-on-surface-dim)] truncate max-w-[40vw]">no scooter</span>
+          title="Kein Scooter verbunden"></span>
+    <span id="conn-text" class="text-sm text-[var(--color-on-surface-dim)] truncate max-w-[40vw]">Kein Scooter</span>
     <nav class="ml-auto flex gap-3 sm:gap-4 text-sm text-[var(--color-on-surface-dim)]">
       <a class="hover:text-[var(--color-brand-teal)]" href="/">Live</a>
-      <a class="hover:text-[var(--color-brand-teal)]" href="/history">History</a>
+      <a class="hover:text-[var(--color-brand-teal)]" href="/history">Verlauf</a>
       <a class="hover:text-[var(--color-brand-teal)]" href="/obs">OBS</a>
     </nav>
   </header>
@@ -25,29 +25,29 @@
     <!-- Big tiles -->
     <section class="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
       <div class="rounded-2xl bg-[var(--color-surface-1)] p-4 sm:p-5">
-        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)]">Speed</div>
+        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)]">Geschwindigkeit</div>
         <div class="mt-2 text-3xl sm:text-4xl md:text-5xl font-semibold text-[var(--color-brand-teal)] tabular-nums">
           <span id="t-speed">--</span><span class="text-base sm:text-lg md:text-xl text-[var(--color-on-surface-dim)] ml-1">km/h</span>
         </div>
       </div>
       <div class="rounded-2xl bg-[var(--color-surface-1)] p-4 sm:p-5">
-        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)]">Battery</div>
+        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)]">Akku</div>
         <div class="mt-2 text-3xl sm:text-4xl md:text-5xl font-semibold text-[var(--color-brand-amber)] tabular-nums">
           <span id="t-batt">--</span><span class="text-base sm:text-lg md:text-xl text-[var(--color-on-surface-dim)] ml-1">%</span>
         </div>
       </div>
       <div class="rounded-2xl bg-[var(--color-surface-1)] p-4 sm:p-5 col-span-2 md:col-span-1">
-        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)]">Power</div>
+        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)]">Leistung</div>
         <div class="mt-2 text-3xl sm:text-4xl md:text-5xl font-semibold text-[var(--color-brand-magenta)] tabular-nums">
           <span id="t-power">--</span><span class="text-base sm:text-lg md:text-xl text-[var(--color-on-surface-dim)] ml-1">W</span>
         </div>
       </div>
       <div class="rounded-2xl bg-[var(--color-surface-2)] p-3 sm:p-4">
-        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)]">Voltage</div>
+        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)]">Spannung</div>
         <div class="mt-1 text-xl sm:text-2xl font-medium tabular-nums"><span id="t-volt">--</span><span class="text-sm text-[var(--color-on-surface-dim)] ml-1">V</span></div>
       </div>
       <div class="rounded-2xl bg-[var(--color-surface-2)] p-3 sm:p-4">
-        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)]">Current</div>
+        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)]">Strom</div>
         <div class="mt-1 text-xl sm:text-2xl font-medium tabular-nums"><span id="t-amp">--</span><span class="text-sm text-[var(--color-on-surface-dim)] ml-1">A</span></div>
       </div>
       <div class="rounded-2xl bg-[var(--color-surface-2)] p-3 sm:p-4 col-span-2 md:col-span-1">
@@ -64,7 +64,7 @@
       </span>
       <span id="chip-ridemode"
             class="px-3 py-1 rounded-full bg-[var(--color-surface-2)] text-[var(--color-on-surface-dim)]">
-        Mode: --
+        Modus: --
       </span>
       <span id="chip-scooter"
             class="px-3 py-1 rounded-full bg-[var(--color-surface-2)] text-[var(--color-on-surface-dim)] truncate max-w-[60vw]">
@@ -81,11 +81,11 @@
       </div>
       <div class="grid md:grid-cols-2 gap-3 sm:gap-4">
         <div class="rounded-2xl bg-[var(--color-surface-1)] p-3 sm:p-4">
-          <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mb-2">Speed</div>
+          <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mb-2">Geschwindigkeit</div>
           <div id="chart-speed" class="w-full"></div>
         </div>
         <div class="rounded-2xl bg-[var(--color-surface-1)] p-3 sm:p-4">
-          <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mb-2">Power</div>
+          <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mb-2">Leistung</div>
           <div id="chart-power" class="w-full"></div>
         </div>
       </div>
