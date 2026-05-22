@@ -21,9 +21,19 @@ export function handleTripStart({ tripId, ts, scooterName }) {
   });
 }
 
-export function handleTripEnd(payload) {
+export function handleTripEnd(payload, fallbackScooterName = null) {
   const id = payload.tripId ?? currentTripId;
   if (!id) return;
+  // Insert-or-ignore so trip_end is self-contained — the client no longer
+  // needs to send trip_start first. This is robust against the very common
+  // case where a short trip is finalized in one go without ever streaming a
+  // separate trip_start (e.g. when the app pushes everything from
+  // TripCoordinator.finalizeAndClear).
+  startTrip({
+    id,
+    startedAt: payload.startedAt ?? payload.ts ?? Date.now(),
+    scooterName: payload.scooterAddress ?? fallbackScooterName
+  });
   finalizeTripTx({
     id,
     endedAt: payload.ts ?? Date.now(),

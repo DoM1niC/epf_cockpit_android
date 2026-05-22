@@ -40,11 +40,15 @@ class TripRecorder(private val scooterAddress: String) {
         speedSamples += 1
     }
 
-    /** Returns the trip if it covered any distance, otherwise null. */
-    fun finalize(): Trip? {
+    /**
+     * Schnappschuss der aggregierten Werte. Returnt null nur wenn nie ein
+     * Sample reinkam (= Trip war "armed" aber Scooter hat keine Telemetrie
+     * geliefert). Der "≥10 m"-Filter sitzt im Coordinator, damit der den
+     * Trip trotzdem an den Server streamen kann ohne lokale Geister-Persistenz.
+     */
+    fun snapshot(): Trip? {
         if (startedAt == 0L) return null
         val distance = (endTripKm - startTripKm).coerceAtLeast(0f)
-        if (distance < 0.01f) return null
         return Trip(
             startedAt = startedAt,
             endedAt = lastSampleAt,
@@ -57,4 +61,8 @@ class TripRecorder(private val scooterAddress: String) {
             scooterAddress = scooterAddress,
         )
     }
+
+    /** Backwards-compat alias — wird nicht mehr benutzt. */
+    @Deprecated("Use snapshot() and filter at the call site", ReplaceWith("snapshot()"))
+    fun finalize(): Trip? = snapshot()?.takeIf { it.distanceKm >= 0.01f }
 }

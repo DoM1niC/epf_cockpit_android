@@ -26,17 +26,18 @@
     return rawValue == null ? '--' : cursorTimeFmt.format(new Date(rawValue * 1000));
   }
 
-  // EU-Achsen-Werte für uPlot, siehe dashboard.js — kurze Duplikation hier
-  // statt zusätzlichem Shared-Script, damit history.html nicht noch eine
-  // <script>-Zeile braucht.
+  // EU-Achsen-Werte für uPlot, identisch zu dashboard.js — kurze Duplikation
+  // hier statt zusätzlichem Shared-Script, damit history.html nicht noch eine
+  // <script>-Zeile braucht. Tick-Default ist self-contained (volle Zeit),
+  // Kontext-Zeile bringt nur das Datum dazu (keine Zeit-Doppelung).
   const EU_AXIS_VALUES = [
-    [3600 * 24 * 365, "{YYYY}",      null,                                 null, null,                             null, null,           null, 1],
-    [3600 * 24 * 28,  "{MMM}",       "\n{YYYY}",                           null, null,                             null, null,           null, 1],
-    [3600 * 24,       "{DD}.{MM}.",  "\n{YYYY}",                           null, null,                             null, null,           null, 1],
-    [3600,            "{HH}:{mm}",   "\n{DD}.{MM}.{YYYY}",                 null, "\n{DD}.{MM}.",                   null, null,           null, 1],
-    [60,              "{HH}:{mm}",   "\n{DD}.{MM}.{YYYY} {HH}:{mm}",       null, "\n{DD}.{MM}. {HH}:{mm}",         null, "\n{HH}:{mm}",  null, 1],
-    [1,               ":{ss}",       "\n{DD}.{MM}.{YYYY} {HH}:{mm}:{ss}",  null, "\n{DD}.{MM}. {HH}:{mm}:{ss}",    null, "\n{HH}:{mm}:{ss}", null, 1],
-    [0.001,           ":{ss}.{fff}", "\n{DD}.{MM}.{YYYY} {HH}:{mm}:{ss}",  null, "\n{DD}.{MM}. {HH}:{mm}:{ss}",    null, "\n{HH}:{mm}:{ss}", null, 1],
+    [3600 * 24 * 365, "{YYYY}",            null,             null, null,           null, null, null, 1],
+    [3600 * 24 * 28,  "{MMM}",             "\n{YYYY}",       null, null,           null, null, null, 1],
+    [3600 * 24,       "{DD}.{MM}.",        "\n{YYYY}",       null, null,           null, null, null, 1],
+    [3600,            "{HH}:{mm}",         "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
+    [60,              "{HH}:{mm}",         "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
+    [1,               "{HH}:{mm}:{ss}",    "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
+    [0.001,           "{HH}:{mm}:{ss}.{fff}", "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
   ];
 
   function fmtDuration(s) {

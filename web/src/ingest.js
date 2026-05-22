@@ -92,7 +92,7 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'trip_end': {
-        handleTripEnd(msg);
+        handleTripEnd(msg, lastScooterName);
         broadcast(msg);
         break;
       }

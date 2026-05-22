@@ -7,12 +7,14 @@ import android.util.Log
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import no.nordicsemi.android.ble.BleManager
 import no.nordicsemi.android.ble.data.Data
 import no.nordicsemi.android.ble.ktx.suspend
+import no.nordicsemi.android.ble.observer.ConnectionObserver
 
 /**
  * Wraps the GATT exchange with a single scooter. Exposes telemetry and AT replies
@@ -41,6 +43,42 @@ class ScooterManager(context: Context) : BleManager(context) {
         replay = 0, extraBufferCapacity = 16, onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
     val rawFrames = _rawFrames.asSharedFlow()
+
+    /**
+     * Lifecycle-Events vom Nordic-Connection-Observer. BleRepository hängt
+     * sich hier rein um unerwartete Disconnects (link loss, peer termination)
+     * zu erkennen und ggf. Auto-Reconnect zu triggern.
+     */
+    sealed interface ConnEvent {
+        data class Disconnected(val reason: Int, val userInitiated: Boolean) : ConnEvent
+        data class FailedToConnect(val reason: Int) : ConnEvent
+    }
+    private val _connEvents = MutableSharedFlow<ConnEvent>(
+        replay = 0, extraBufferCapacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+    val connEvents: SharedFlow<ConnEvent> = _connEvents.asSharedFlow()
+
+    init {
+        setConnectionObserver(object : ConnectionObserver {
+            override fun onDeviceConnecting(device: android.bluetooth.BluetoothDevice) {}
+            override fun onDeviceConnected(device: android.bluetooth.BluetoothDevice) {}
+            override fun onDeviceFailedToConnect(device: android.bluetooth.BluetoothDevice, reason: Int) {
+                Log.w(tag, "onDeviceFailedToConnect reason=$reason")
+                _connEvents.tryEmit(ConnEvent.FailedToConnect(reason))
+            }
+            override fun onDeviceReady(device: android.bluetooth.BluetoothDevice) {}
+            override fun onDeviceDisconnecting(device: android.bluetooth.BluetoothDevice) {}
+            override fun onDeviceDisconnected(device: android.bluetooth.BluetoothDevice, reason: Int) {
+                // REASON_SUCCESS = lokal initiierter sauberer Disconnect (requestDisconnect),
+                // REASON_TERMINATE_LOCAL_HOST = ebenfalls lokal. Alles andere ist peer-side
+                // oder ein Verbindungsabbruch — da wollen wir Auto-Reconnect anstoßen.
+                val userInitiated = reason == ConnectionObserver.REASON_SUCCESS ||
+                    reason == ConnectionObserver.REASON_TERMINATE_LOCAL_HOST
+                Log.i(tag, "onDeviceDisconnected reason=$reason userInitiated=$userInitiated")
+                _connEvents.tryEmit(ConnEvent.Disconnected(reason, userInitiated))
+            }
+        })
+    }
 
     override fun getMinLogPriority() = Log.VERBOSE
     override fun log(priority: Int, message: String) { Log.println(priority, tag, message) }

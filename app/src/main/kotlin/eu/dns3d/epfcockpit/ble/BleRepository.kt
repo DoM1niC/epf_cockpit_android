@@ -4,7 +4,9 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import eu.dns3d.epfcockpit.data.SettingsStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -14,11 +16,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.launch
-import android.os.ParcelUuid
+import kotlinx.coroutines.withTimeoutOrNull
 import no.nordicsemi.android.support.v18.scanner.BluetoothLeScannerCompat
 import no.nordicsemi.android.support.v18.scanner.ScanCallback
 import no.nordicsemi.android.support.v18.scanner.ScanFilter
@@ -45,10 +49,12 @@ sealed interface ConnectionState {
 @Singleton
 class BleRepository @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val settings: SettingsStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob())
     private val manager = ScooterManager(context)
     private var heartbeatJob: Job? = null
+    private var reconnectJob: Job? = null
 
     /**
      * Sticky flag for the current process: true once the user pressed the
@@ -76,6 +82,33 @@ class BleRepository @Inject constructor(
     val voiceOff: StateFlow<Boolean?> = _voiceOff.asStateFlow()
 
     init {
+        // Connection-Lifecycle vom Nordic-Manager beobachten — sonst bleibt
+        // _connection auf "Connected" hängen wenn der Scooter ausgeht oder
+        // außer Reichweite fährt, weil der suspend connect() längst returnt
+        // hat und niemand mehr zuhört.
+        scope.launch {
+            manager.connEvents.collect { event ->
+                when (event) {
+                    is ScooterManager.ConnEvent.Disconnected -> {
+                        stopHeartbeat()
+                        if (event.userInitiated) {
+                            _connection.value = ConnectionState.Disconnected
+                        } else {
+                            Log.i(TAG, "peer disconnected (reason=${event.reason}) — kicking reconnect")
+                            _connection.value = ConnectionState.Failed(
+                                friendlyDisconnectReason(event.reason)
+                            )
+                            maybeStartAutoReconnect()
+                        }
+                    }
+                    is ScooterManager.ConnEvent.FailedToConnect -> {
+                        _connection.value = ConnectionState.Failed(
+                            friendlyDisconnectReason(event.reason)
+                        )
+                    }
+                }
+            }
+        }
         scope.launch {
             manager.atReplies.collect { reply ->
                 when (reply) {
@@ -226,9 +259,87 @@ class BleRepository @Inject constructor(
 
     fun disconnect() {
         userDisconnected = true
+        reconnectJob?.cancel()
+        reconnectJob = null
         stopHeartbeat()
         manager.requestDisconnect()
         _connection.value = ConnectionState.Disconnected
+    }
+
+    /**
+     * Zwei-Phasen-Auto-Reconnect identisch zum [eu.dns3d.epfcockpit.ui.scan.ScanViewModel]:
+     *   Phase 1 (≤6 s): direkter Connect auf gespeicherte MAC
+     *   Phase 2 (≤15 s): Scan-by-Name, dann Connect auf frische MAC
+     *
+     * Wird vom Disconnect-Observer aufgerufen wenn die Verbindung *nicht*
+     * vom User abgerissen wurde und [SettingsStore.autoConnect] an ist.
+     * Im Gegensatz zur ScanVM lebt das hier im Repository, also auch wenn
+     * der User gerade auf Dashboard / Settings / History ist statt auf Scan.
+     */
+    private fun maybeStartAutoReconnect() {
+        if (userDisconnected) return
+        if (reconnectJob?.isActive == true) return
+        reconnectJob = scope.launch {
+            val snap = settings.flow.first()
+            if (!snap.autoConnect) {
+                Log.i(TAG, "auto-reconnect skipped (autoConnect=off)")
+                return@launch
+            }
+            val savedAddr = snap.lastScooterAddress ?: run {
+                Log.i(TAG, "auto-reconnect skipped (no remembered address)")
+                return@launch
+            }
+            val savedName = snap.lastScooterName
+
+            Log.i(TAG, "auto-reconnect phase 1: direct connect to $savedAddr")
+            // Phase 1: direkter Connect auf alte MAC
+            try {
+                withTimeoutOrNull(6_000L) { connect(savedAddr) }
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                return@launch
+            } catch (t: Throwable) {
+                Log.w(TAG, "auto-reconnect phase 1 failed: ${t.message}")
+            }
+            if (_connection.value is ConnectionState.Connected) return@launch
+
+            // Phase 2: Scan-by-Name
+            Log.i(TAG, "auto-reconnect phase 2: scan by name '$savedName'")
+            val match = try {
+                withTimeoutOrNull(15_000L) {
+                    scan(scootersOnly = true).firstOrNull { found ->
+                        (!savedName.isNullOrBlank() &&
+                            found.name?.equals(savedName, ignoreCase = true) == true) ||
+                            found.address.equals(savedAddr, ignoreCase = true)
+                    }
+                }
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                return@launch
+            }
+            if (match != null) {
+                settings.rememberScooter(match.address, match.name)
+                runCatching { connect(match.address) }
+            } else {
+                Log.i(TAG, "auto-reconnect phase 2: nothing found")
+            }
+        }
+    }
+
+    private fun friendlyDisconnectReason(reason: Int): String = when (reason) {
+        no.nordicsemi.android.ble.observer.ConnectionObserver.REASON_TERMINATE_PEER_USER ->
+            "Scooter hat die Verbindung beendet"
+        no.nordicsemi.android.ble.observer.ConnectionObserver.REASON_LINK_LOSS ->
+            "Verbindung verloren – Signal weg"
+        no.nordicsemi.android.ble.observer.ConnectionObserver.REASON_TIMEOUT ->
+            "Zeitüberschreitung"
+        no.nordicsemi.android.ble.observer.ConnectionObserver.REASON_NOT_SUPPORTED ->
+            "Gerät nicht unterstützt"
+        no.nordicsemi.android.ble.observer.ConnectionObserver.REASON_CANCELLED ->
+            "Verbindungsversuch abgebrochen"
+        else -> "Verbindung unterbrochen (reason=$reason)"
+    }
+
+    private companion object {
+        const val TAG = "BleRepository"
     }
 
     private fun startHeartbeat() {

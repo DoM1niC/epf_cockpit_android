@@ -212,6 +212,16 @@ class TelemetryStreamer @Inject constructor(
         }
     }
 
+    /**
+     * Öffentlicher Fire-and-Forget-Send für externe Caller (z.B. [TripCoordinator]
+     * für `trip_start`/`trip_end`). No-op wenn der Socket gerade nicht
+     * verbunden ist — der Server würde die Frame ohnehin nie bekommen, und
+     * wir wollen keine Buffer/Replay-Komplexität.
+     */
+    fun send(msg: StreamMessage) {
+        sendRaw<StreamMessage>(msg)
+    }
+
     private companion object {
         const val TAG = "TelemetryStreamer"
     }

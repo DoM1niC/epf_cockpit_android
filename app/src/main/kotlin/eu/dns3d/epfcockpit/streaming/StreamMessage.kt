@@ -47,4 +47,25 @@ sealed interface StreamMessage {
         val authenticated: Boolean,
         val scooterName: String?,
     ) : StreamMessage
+
+    @Serializable
+    @SerialName("trip_start")
+    data class TripStart(
+        val tripId: String,
+        val ts: Long,
+    ) : StreamMessage
+
+    @Serializable
+    @SerialName("trip_end")
+    data class TripEnd(
+        val tripId: String,
+        val startedAt: Long,
+        val ts: Long,                  // = endedAt
+        val distanceKm: Double,
+        val energyWh: Double,
+        val durationS: Long,
+        val maxSpeedKmh: Double,
+        val avgSpeedKmh: Double,
+        val scooterAddress: String?,
+    ) : StreamMessage
 }

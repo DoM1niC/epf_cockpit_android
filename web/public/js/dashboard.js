@@ -9,19 +9,19 @@
   const WINDOW_MS = 5 * 60 * 1000; // 5 minutes
   const buf = { ts: [], speed: [], power: [] };
 
-  // uPlot Default-Werte sind US-locale (12h + M/D/YY). EU-Variante mit 24h-Zeit
-  // und Datum als DD.MM.YYYY. Format pro Tick-Increment-Level:
-  //   [step_seconds, default, year, null, month, null, day, null, mode]
-  // Tick-Default wird immer angezeigt; year/month/day-Slot wird auf der
-  // Grenze (Jahres-/Monats-/Tageswechsel) zusätzlich angehängt.
+  // uPlot Default-Werte sind US-locale (12h + M/D/YY). EU-Variante mit 24h-Zeit.
+  // Das Tick-Default ist *self-contained* (z.B. "19:52:03"), die Kontext-Zeile
+  // (year/month/day-Slot) bringt NUR das Datum dazu — keine Doppelung der Zeit.
+  // Vorher hatten wir auf Grenzen "DD.MM.YYYY HH:MM:SS" was zur Tick-Beschriftung
+  // ":58" doppelt und chaotisch wirkte.
   const EU_AXIS_VALUES = [
-    [3600 * 24 * 365, "{YYYY}",      null,                                 null, null,                             null, null,           null, 1],
-    [3600 * 24 * 28,  "{MMM}",       "\n{YYYY}",                           null, null,                             null, null,           null, 1],
-    [3600 * 24,       "{DD}.{MM}.",  "\n{YYYY}",                           null, null,                             null, null,           null, 1],
-    [3600,            "{HH}:{mm}",   "\n{DD}.{MM}.{YYYY}",                 null, "\n{DD}.{MM}.",                   null, null,           null, 1],
-    [60,              "{HH}:{mm}",   "\n{DD}.{MM}.{YYYY} {HH}:{mm}",       null, "\n{DD}.{MM}. {HH}:{mm}",         null, "\n{HH}:{mm}",  null, 1],
-    [1,               ":{ss}",       "\n{DD}.{MM}.{YYYY} {HH}:{mm}:{ss}",  null, "\n{DD}.{MM}. {HH}:{mm}:{ss}",    null, "\n{HH}:{mm}:{ss}", null, 1],
-    [0.001,           ":{ss}.{fff}", "\n{DD}.{MM}.{YYYY} {HH}:{mm}:{ss}",  null, "\n{DD}.{MM}. {HH}:{mm}:{ss}",    null, "\n{HH}:{mm}:{ss}", null, 1],
+    [3600 * 24 * 365, "{YYYY}",            null,             null, null,           null, null, null, 1],
+    [3600 * 24 * 28,  "{MMM}",             "\n{YYYY}",       null, null,           null, null, null, 1],
+    [3600 * 24,       "{DD}.{MM}.",        "\n{YYYY}",       null, null,           null, null, null, 1],
+    [3600,            "{HH}:{mm}",         "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
+    [60,              "{HH}:{mm}",         "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
+    [1,               "{HH}:{mm}:{ss}",    "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
+    [0.001,           "{HH}:{mm}:{ss}.{fff}", "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
   ];
 
   // Cursor-Tooltip (Hover) — gleiches 24h/EU-Format wie Achsen.
@@ -54,7 +54,19 @@
     const opts = {
       width: host.clientWidth || 600,
       height: chartHeight(),
-      scales: { x: { time: true } },
+      scales: {
+        x: {
+          time: true,
+          // Live-Chart immer aufs 5-Min-Fenster pinnen — sonst zoomt uPlot
+          // bei spärlichen Daten bis runter auf Sekunden-Ticks und die
+          // Achse wirkt wie eine ganz andere Zeitskala. range() wird auf
+          // jedem setData neu ausgewertet, also wandert das Fenster live mit.
+          range: () => {
+            const now = Date.now() / 1000;
+            return [now - WINDOW_MS / 1000, now];
+          },
+        },
+      },
       legend: { show: false },
       cursor: { drag: { x: false, y: false } },
       axes: [
