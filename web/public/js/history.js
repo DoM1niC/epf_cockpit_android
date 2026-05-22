@@ -7,9 +7,16 @@
   const list = document.getElementById('trip-list');
   const emptyMsg = document.getElementById('empty-msg');
 
+  // EU-Datum + 24h-Zeit: "22.05.2026, 14:30". hour12:false forciert 24h
+  // auch in en-US-Locales, die sonst AM/PM einsetzen.
+  const dateFmt = new Intl.DateTimeFormat('de-DE', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+    hour12: false,
+  });
   function fmtDate(ms) {
     if (!ms) return '--';
-    return new Date(ms).toLocaleString();
+    return dateFmt.format(new Date(ms));
   }
 
   function fmtDuration(s) {
