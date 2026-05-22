@@ -65,7 +65,11 @@ RestrictNamespaces=true
 RestrictRealtime=true
 RestrictSUIDSGID=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
+# WICHTIG: MemoryDenyWriteExecute MUSS aus bleiben — V8 ruft mprotect()
+# auf JIT-Pages (W^X flip), das landet sonst als errno=12 (ENOMEM) und
+# V8 stirbt schon vor Isolate::Initialize. Einziger Workaround waere
+# `node --jitless` (zu langsam, kein WASM) — fuer dieses Projekt nicht relevant.
+#MemoryDenyWriteExecute=true
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@mount @debug @cpu-emulation @obsolete @privileged @raw-io @reboot @swap
