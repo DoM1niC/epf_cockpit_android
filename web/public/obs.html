@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EPF OBS Widget</title>
+  <link rel="stylesheet" href="/dist/app.css" />
+  <link rel="stylesheet" href="/css/obs.css" />
+</head>
+<body class="font-sans select-none">
+  <!--
+    Query params:
+      ?theme=light|dark        default dark (affects text color)
+      ?accent=teal|amber|magenta  default teal (affects speed number)
+      ?compact=1               stack vertically instead of horizontal
+  -->
+  <div id="obs-root" class="p-6 inline-flex items-baseline gap-8 obs-shadow">
+    <div class="flex items-baseline gap-1">
+      <span id="obs-speed" class="font-bold leading-none accent-teal" style="font-size:96px;">--</span>
+      <span class="text-white/80" style="font-size:24px;">km/h</span>
+    </div>
+    <div class="flex items-baseline gap-1">
+      <span id="obs-batt" class="font-semibold leading-none text-white" style="font-size:48px;">--</span>
+      <span class="text-white/80" style="font-size:18px;">%</span>
+    </div>
+    <div class="flex items-baseline gap-1">
+      <span class="text-white" style="font-size:32px;">&#9889;</span>
+      <span id="obs-power" class="font-medium leading-none text-white" style="font-size:32px;">--</span>
+      <span class="text-white/80" style="font-size:16px;">W</span>
+    </div>
+  </div>
+
+  <script src="/js/auth.js"></script>
+  <script src="/js/obs.js"></script>
+</body>
+</html>

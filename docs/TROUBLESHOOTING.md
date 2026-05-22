@@ -138,3 +138,37 @@ Kick-Start in der offiziellen App. Wir replizieren das Verhalten.
 
 War so vor der DataStore-Persistierung. Jetzt fixed: `rideMode` wird
 gespeichert und beim DashboardVM-init geladen.
+
+## Live-Streaming (Node-Dashboard)
+
+Vollständige Doku in [STREAMING.md](STREAMING.md) — hier nur die häufigsten
+Fehlerbilder als Pointer.
+
+### Status bleibt auf „Fehlgeschlagen – retry läuft"
+
+```
+adb logcat -s TelemetryStreamer:V OkHttp:V
+```
+
+- `Failed to connect to /…` → Server nicht erreichbar, Port-/Firewall-Issue
+- `HTTP/1.1 401` → Token falsch, oder Server erwartet keines (App-Feld leer
+  lassen)
+- `SSL handshake failed` → Cert-Problem bei `wss://` (self-signed,
+  abgelaufen, Hostname mismatch)
+
+### Server logged Reconnect-Loops im Sekundentakt
+
+Das ist der App-Streamer mit Exponential-Backoff nach 401. Token in der
+App korrigieren — danach wird's ruhig.
+
+### Browser zeigt 401 obwohl Bookmark `?token=…` hat
+
+`EpfAuth.token` in der DevTools-Console prüfen. `sessionStorage`-Eintrag
+`epf_token` schauen. Wenn beide leer: Tippfehler im URL-Parameter.
+
+### OBS-Browser-Source schwarz
+
+Properties → *Refresh cache of current page*. OBS cached agressiv, vor
+allem nach Token-Wechsel. Wenn Token im URL fehlt, zeigt OBS die
+401-HTML-Seite (dark, fällt im Stream nicht auf) — vorher in einem
+normalen Tab gegentesten.

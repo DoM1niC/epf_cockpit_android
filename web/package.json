@@ -1,0 +1,28 @@
+{
+  "name": "epf-cockpit-web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Telemetry dashboard for the EPF Cockpit Android e-scooter app. Receives live BLE telemetry over WebSocket, stores in SQLite, serves live dashboard / OBS widget / trip history views.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "build:css": "tailwindcss -i public/css/tailwind.css -o public/dist/app.css --minify",
+    "build:vendor": "node scripts/copy-vendor.js",
+    "build": "npm run build:vendor && npm run build:css",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "dotenv": "^16.4.5",
+    "express": "^5.0.1",
+    "uplot": "^1.6.31",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.0.0",
+    "tailwindcss": "^4.0.0"
+  }
+}

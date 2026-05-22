@@ -14,6 +14,8 @@ import javax.inject.Singleton
 
 private val Context.dataStore by preferencesDataStore(name = "epf_settings")
 
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
 /**
  * App-level preferences. PIN is intentionally NOT stored encrypted — the same PIN
  * is sent in plaintext over BLE (per ZydDash analysis), so any disk encryption
@@ -33,6 +35,12 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val gear3MaxKmh: Int,
         /** Last ride mode the user picked (true = Stand Stop, false = Kick Start). */
         val rideModeStand: Boolean,
+        val themeMode: ThemeMode,
+        /** WebSocket-Endpoint des Node-Dashboards (z.B. ws://192.168.1.50:8787/ws/ingest). */
+        val streamingUrl: String?,
+        val streamingEnabled: Boolean,
+        /** Shared-Token gegen [streamingUrl] (server-side INGEST_TOKEN). Null = ohne Auth. */
+        val streamingToken: String?,
     )
 
     val flow: Flow<Snapshot> = context.dataStore.data.map { p ->
@@ -45,6 +53,11 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             gear2MaxKmh = p[KEY_G2] ?: 15,
             gear3MaxKmh = p[KEY_G3] ?: 20,
             rideModeStand = p[KEY_RIDE_MODE_STAND] ?: true,
+            themeMode = (p[KEY_THEME_MODE])?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
+                ?: ThemeMode.SYSTEM,
+            streamingUrl = p[KEY_STREAMING_URL]?.takeIf { it.isNotBlank() },
+            streamingEnabled = p[KEY_STREAMING_ENABLED] ?: false,
+            streamingToken = p[KEY_STREAMING_TOKEN]?.takeIf { it.isNotBlank() },
         )
     }
 
@@ -85,6 +98,28 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         }
     }
 
+    suspend fun setThemeMode(mode: ThemeMode) {
+        context.dataStore.edit { p -> p[KEY_THEME_MODE] = mode.name }
+    }
+
+    suspend fun setStreamingUrl(url: String?) {
+        context.dataStore.edit { p ->
+            val trimmed = url?.trim().orEmpty()
+            if (trimmed.isEmpty()) p.remove(KEY_STREAMING_URL) else p[KEY_STREAMING_URL] = trimmed
+        }
+    }
+
+    suspend fun setStreamingEnabled(enabled: Boolean) {
+        context.dataStore.edit { p -> p[KEY_STREAMING_ENABLED] = enabled }
+    }
+
+    suspend fun setStreamingToken(token: String?) {
+        context.dataStore.edit { p ->
+            val trimmed = token?.trim().orEmpty()
+            if (trimmed.isEmpty()) p.remove(KEY_STREAMING_TOKEN) else p[KEY_STREAMING_TOKEN] = trimmed
+        }
+    }
+
     private companion object {
         val KEY_ADDRESS = stringPreferencesKey("scooter_address")
         val KEY_NAME = stringPreferencesKey("scooter_name")
@@ -94,5 +129,9 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val KEY_G2 = intPreferencesKey("gear2_max_kmh")
         val KEY_G3 = intPreferencesKey("gear3_max_kmh")
         val KEY_RIDE_MODE_STAND = booleanPreferencesKey("ride_mode_stand")
+        val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+        val KEY_STREAMING_URL = stringPreferencesKey("streaming_url")
+        val KEY_STREAMING_ENABLED = booleanPreferencesKey("streaming_enabled")
+        val KEY_STREAMING_TOKEN = stringPreferencesKey("streaming_token")
     }
 }

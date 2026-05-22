@@ -16,7 +16,8 @@ Kurzdoku für Mitlesende — wer Code anpassen will, findet hier die Landkarte.
 ```
 app/src/main/kotlin/eu/dns3d/epfcockpit/
 ├── EpfApplication.kt            // @HiltAndroidApp
-├── MainActivity.kt              // @AndroidEntryPoint, SplashScreen, Theme, AppNav
+├── MainActivity.kt              // @AndroidEntryPoint, Splash, Theme, AppNav,
+│                                //   injiziert TelemetryStreamer eagerly
 ├── ble/
 │   ├── BleConstants.kt          // UUIDs, default-PIN, name prefixes
 │   ├── Crc16Modbus.kt           // CRC16-MODBUS mit BE/LE-Verify
@@ -25,9 +26,13 @@ app/src/main/kotlin/eu/dns3d/epfcockpit/
 │   ├── ScooterManager.kt        // BleManager-Subklasse (Nordic)
 │   └── BleRepository.kt         // @Singleton, einziger BLE-Entry-Point
 ├── data/
-│   ├── SettingsStore.kt         // DataStore-wrapped Preferences
+│   ├── SettingsStore.kt         // DataStore-wrapped Preferences inkl.
+│   │                            //   themeMode + streaming{Url,Token,Enabled}
 │   ├── Trip*.kt                 // Room: Trip-Entity + DAO + DB
 │   └── TripRecorder.kt          // Aggregiert Telemetry → Trip-Aggregat
+├── streaming/
+│   ├── StreamMessage.kt         // Sealed JSON-Wire-Format (kotlinx.serialization)
+│   └── TelemetryStreamer.kt     // @Singleton, OkHttp-WebSocket-Push an web/-Server
 ├── di/
 │   └── AppModule.kt             // Hilt-Provider für Room
 ├── ui/
@@ -36,10 +41,15 @@ app/src/main/kotlin/eu/dns3d/epfcockpit/
 │   ├── scan/                    // ScanScreen + ViewModel
 │   ├── auth/                    // PinScreen + ViewModel
 │   ├── dashboard/               // DashboardScreen + ViewModel + components
-│   ├── settings/                // SettingsScreen + ViewModel
+│   ├── settings/                // SettingsScreen + ViewModel (Theme/Streaming/About)
 │   └── history/                 // HistoryScreen + ViewModel
 └── util/
     └── Permissions.kt           // BLUETOOTH_SCAN/CONNECT request list
+
+web/                              // Optional: Node-Dashboard, Details: web/README.md
+├── src/                          // Express 5 + ws + better-sqlite3 (WAL)
+├── public/                       // dashboard.html + obs.html + history.html
+└── deploy/                       // nginx.conf + systemd unit + Step-by-Step
 ```
 
 ## State-Flow
@@ -158,3 +168,24 @@ ViewModel-OnCleared wird der finale Trip in Room geschrieben.
 - **PIN wird in DataStore (Klartext)** gespeichert — dieselbe PIN geht
   auch unverschlüsselt über BLE (per ZydDash-Analyse), daher hätte
   EncryptedSharedPreferences hier nur Symbolwert
+- **Streaming-Token** ebenfalls in DataStore Klartext — wird per
+  `Authorization: Bearer …` an den WS-Upgrade gehängt, nicht via
+  Query-Param. Begründung + Server-seitige Auth-Architektur siehe
+  [STREAMING.md](STREAMING.md).
+
+## Streaming-Layer
+
+`TelemetryStreamer` ist ein `@Singleton`, der von `MainActivity` eagerly
+injiziert wird (damit er ab App-Start läuft, unabhängig davon ob der User
+gerade die Settings öffnet). Drei Coroutines auf einem eigenen
+`SupervisorJob`:
+
+1. Watcher auf `SettingsStore.flow` — `distinctUntilChanged()` über
+   `Triple(url, enabled, token)` → reconnected bei jedem Wechsel.
+2. Forward von `BleRepository.connection` → `state`-JSON-Frames.
+3. Forward von `BleRepository.telemetry` → `telemetry`-JSON-Frames,
+   throttled auf 5 Hz (200 ms min-interval).
+
+Reconnect-Loop mit Exponential-Backoff bis 30 s. `CancellationException`
+explizit erlaubt (Job-Cancel ist normal). Status wird als `StateFlow`
+exposed und im Settings-Screen live angezeigt.

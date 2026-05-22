@@ -43,6 +43,22 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
 - **Material 3 Expressive** mit dem neuen Type-Scale und größeren Corner-Radii
 - **Dynamic Color** (Monet) ab Android 12 — App-Farben folgen dem Wallpaper
 - Edge-to-Edge, animierte Übergänge, M3-Wavy-Indicators
+- Light / Dark / System Theme manuell wählbar (Settings)
+- Eigenes App-Icon + Splashscreen (E-Scooter-Glyph, Dark-Teal)
+
+### Live-Streaming → Web-Dashboard
+- Optional pusht die App Telemetry per WebSocket an einen kleinen Node-Server
+  (siehe [`web/`](web/)) — daraus entstehen drei Browser-Views:
+  Live-Dashboard mit Charts, OBS-Studio-Widget (transparent) und Trip-Historie.
+- Shared-Token-Auth: `INGEST_TOKEN` (App→Server) + `VIEW_TOKEN` (Server→Browser),
+  beide optional, konstant-zeitig verglichen. Token in der App wird als
+  `Authorization: Bearer …` übertragen, landet nicht in Server-Logs.
+- Server-URL + Token + Enable-Switch in den App-Settings.
+- Produktion: nginx-Reverse-Proxy + gehärteter systemd-Service, fertige
+  Configs unter [`web/deploy/`](web/deploy/).
+- Details: [`docs/STREAMING.md`](docs/STREAMING.md) (Protokoll, Auth-Modell,
+  Troubleshooting) und [`web/deploy/README.md`](web/deploy/README.md)
+  (Schritt-für-Schritt-Deployment auf 3dns.eu).
 
 ## Download
 

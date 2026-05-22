@@ -1,0 +1,25 @@
+/* Tailwind v4 CSS-first config. No tailwind.config.js needed. */
+@import "tailwindcss";
+
+@theme {
+  /* Brand colors — match the Android Material 3 palette */
+  --color-brand-teal: #4DD0E1;
+  --color-brand-amber: #FFB300;
+  --color-brand-magenta: #E91E63;
+
+  /* Dark surface tones (used as default in dashboard.html) */
+  --color-surface-0: #0e1116;
+  --color-surface-1: #161a21;
+  --color-surface-2: #1f242d;
+  --color-surface-3: #2a2f3a;
+  --color-on-surface: #e6e8ee;
+  --color-on-surface-dim: #9aa3b2;
+}
+
+/* Subtle scrollbars to match the dark surface */
+@media (prefers-color-scheme: dark) {
+  html { color-scheme: dark; }
+}
+
+/* uPlot host containers should never overflow tile cards */
+.uplot { width: 100% !important; }

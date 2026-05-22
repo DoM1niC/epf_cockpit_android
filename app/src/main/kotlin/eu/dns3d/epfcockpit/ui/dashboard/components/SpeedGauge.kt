@@ -7,7 +7,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,13 +41,13 @@ fun SpeedGauge(
         1.00f to MaterialTheme.colorScheme.secondary,
     )
 
+    // Square aspect so the arc stays circular regardless of which axis the
+    // caller constrains (fillMaxWidth in portrait, fillMaxHeight in landscape).
     Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .aspectRatio(1f),
+        modifier = modifier.aspectRatio(1f),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.fillMaxWidth().aspectRatio(1f)) {
+        Canvas(Modifier.fillMaxSize()) {
             val strokeWidth = size.minDimension * 0.10f
             val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             // drawArc's stroke is centered on the arc path, so half the

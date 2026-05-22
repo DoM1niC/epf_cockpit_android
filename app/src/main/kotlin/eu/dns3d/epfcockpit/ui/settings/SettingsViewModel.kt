@@ -6,6 +6,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import eu.dns3d.epfcockpit.ble.AtResponse
 import eu.dns3d.epfcockpit.ble.BleRepository
 import eu.dns3d.epfcockpit.data.SettingsStore
+import eu.dns3d.epfcockpit.data.ThemeMode
+import eu.dns3d.epfcockpit.streaming.TelemetryStreamer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -22,12 +24,17 @@ data class SettingsUiState(
     val autoConnect: Boolean = true,
     val scooterName: String? = null,
     val scooterAddress: String? = null,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val streamingUrl: String = "",
+    val streamingEnabled: Boolean = false,
+    val streamingToken: String = "",
 )
 
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val ble: BleRepository,
     private val store: SettingsStore,
+    streamer: TelemetryStreamer,
 ) : ViewModel() {
 
     val state: StateFlow<SettingsUiState> = store.flow
@@ -39,9 +46,15 @@ class SettingsViewModel @Inject constructor(
                 autoConnect = s.autoConnect,
                 scooterName = s.lastScooterName,
                 scooterAddress = s.lastScooterAddress,
+                themeMode = s.themeMode,
+                streamingUrl = s.streamingUrl.orEmpty(),
+                streamingEnabled = s.streamingEnabled,
+                streamingToken = s.streamingToken.orEmpty(),
             )
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
+
+    val streamingStatus: StateFlow<TelemetryStreamer.Status> = streamer.status
 
     private val _pinStatus = MutableStateFlow<String?>(null)
     val pinStatus: StateFlow<String?> = _pinStatus.asStateFlow()
@@ -60,6 +73,22 @@ class SettingsViewModel @Inject constructor(
 
     fun setAutoConnect(enabled: Boolean) {
         viewModelScope.launch { store.setAutoConnect(enabled) }
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { store.setThemeMode(mode) }
+    }
+
+    fun setStreamingUrl(url: String) {
+        viewModelScope.launch { store.setStreamingUrl(url) }
+    }
+
+    fun setStreamingEnabled(enabled: Boolean) {
+        viewModelScope.launch { store.setStreamingEnabled(enabled) }
+    }
+
+    fun setStreamingToken(token: String) {
+        viewModelScope.launch { store.setStreamingToken(token) }
     }
 
     fun changePin(newPin: String) {

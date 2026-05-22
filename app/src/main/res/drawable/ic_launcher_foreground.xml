@@ -1,10 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  E-Scooter Glyph (Seitenansicht), strikt innerhalb der Adaptive-Icon-Safe-Zone
+  (Radius 32 um (54,54)) — sonst clippt das Launcher-Mask wesentliche Teile ab.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- Räder (außerer Reifen + Speichenring via evenodd) -->
     <path
         android:fillColor="#6FDBC2"
-        android:pathData="M54,28 L72,54 L60,54 L60,80 L48,80 L48,54 L36,54 Z"/>
+        android:fillType="evenOdd"
+        android:pathData="M36,70 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0 z M36,70 m-3,0 a3,3 0 1,1 6,0 a3,3 0 1,1 -6,0 z M72,70 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0 z M72,70 m-3,0 a3,3 0 1,1 6,0 a3,3 0 1,1 -6,0 z"/>
+    <!-- Deck / Trittbrett -->
+    <path
+        android:fillColor="#6FDBC2"
+        android:pathData="M30,58 L78,58 L78,64 L30,64 Z"/>
+    <!-- Lenkerstange (leicht angewinkelt) -->
+    <path
+        android:fillColor="#6FDBC2"
+        android:pathData="M70,58 L76,58 L62,32 L56,32 Z"/>
+    <!-- Lenker -->
+    <path
+        android:fillColor="#6FDBC2"
+        android:pathData="M44,30 L72,30 L72,36 L44,36 Z"/>
+    <!-- Lenker-Griff-Caps -->
+    <path
+        android:fillColor="#6FDBC2"
+        android:pathData="M44,33 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z M72,33 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z"/>
+    <!-- Scheinwerfer (Amber) -->
+    <path
+        android:fillColor="#FFB300"
+        android:pathData="M66,30 m-2.5,0 a2.5,2.5 0 1,0 5,0 a2.5,2.5 0 1,0 -5,0 z"/>
 </vector>

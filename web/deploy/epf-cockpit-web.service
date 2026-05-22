@@ -1,0 +1,85 @@
+# /etc/systemd/system/epf-cockpit-web.service
+#
+# systemd unit für epf-cockpit-web (Node 22 + Express + ws + better-sqlite3).
+#
+# Setup-Schritte (einmalig, als root):
+#
+#   # 1. dedizierten User + Datenverzeichnis anlegen
+#   useradd --system --no-create-home --shell /usr/sbin/nologin epfcockpit
+#   install -d -o epfcockpit -g epfcockpit -m 0750 /var/lib/epf-cockpit-web
+#
+#   # 2. App-Code nach /opt/epf-cockpit-web deployen (git clone + npm ci + build)
+#   git clone https://git.3dns.eu/dom1nic/epf_cockpit_android.git /opt/epf-cockpit-src
+#   ln -s /opt/epf-cockpit-src/web /opt/epf-cockpit-web
+#   cd /opt/epf-cockpit-web && npm ci && npm run build
+#   chown -R epfcockpit:epfcockpit /opt/epf-cockpit-src
+#
+#   # 3. .env aus dem Template + Tokens generieren
+#   cp /opt/epf-cockpit-web/.env.example /etc/epf-cockpit-web.env
+#   chmod 0640 /etc/epf-cockpit-web.env
+#   chown root:epfcockpit /etc/epf-cockpit-web.env
+#   {
+#     echo "INGEST_TOKEN=$(openssl rand -hex 32)"
+#     echo "VIEW_TOKEN=$(openssl rand -hex 32)"
+#     echo "BIND_ADDR=127.0.0.1"
+#     echo "DB_PATH=/var/lib/epf-cockpit-web/epf.db"
+#   } >> /etc/epf-cockpit-web.env
+#
+#   # 4. Unit aktivieren
+#   cp /opt/epf-cockpit-web/deploy/epf-cockpit-web.service /etc/systemd/system/
+#   systemctl daemon-reload
+#   systemctl enable --now epf-cockpit-web
+#   journalctl -u epf-cockpit-web -f
+
+[Unit]
+Description=EPF Cockpit Web (Telemetry-Dashboard)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=epfcockpit
+Group=epfcockpit
+WorkingDirectory=/opt/epf-cockpit-web
+EnvironmentFile=/etc/epf-cockpit-web.env
+ExecStart=/usr/bin/node src/server.js
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+# --- Hardening ----------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@mount @debug @cpu-emulation @obsolete @privileged @raw-io @reboot @swap
+
+# Nur diese Pfade dürfen geschrieben werden (sqlite-DB + WAL/SHM Sidecars).
+ReadWritePaths=/var/lib/epf-cockpit-web
+
+# Netz: nur IPv4 + IPv6 TCP/UDP, kein Raw-Socket, kein Multicast.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Ressourcen-Limits — Node ist single-threaded, ein Worker reicht.
+LimitNOFILE=4096
+TasksMax=64
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

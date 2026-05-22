@@ -1,6 +1,10 @@
 package eu.dns3d.epfcockpit.ui.settings
 
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -8,11 +12,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -23,7 +33,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -33,12 +45,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import eu.dns3d.epfcockpit.data.ThemeMode
+import eu.dns3d.epfcockpit.streaming.TelemetryStreamer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,7 +66,20 @@ fun SettingsScreen(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val pinStatus by vm.pinStatus.collectAsStateWithLifecycle()
+    val streamingStatus by vm.streamingStatus.collectAsStateWithLifecycle()
     var newPin by remember { mutableStateOf("") }
+
+    // Lokaler Buffer für das URL-Feld, damit der User tippen kann ohne dass jede
+    // Tastatureingabe sofort durch den DataStore zurückgepushed wird.
+    var urlDraft by remember(state.streamingUrl) { mutableStateOf(state.streamingUrl) }
+    LaunchedEffect(state.streamingUrl) {
+        if (urlDraft.isBlank()) urlDraft = state.streamingUrl
+    }
+    var tokenDraft by remember(state.streamingToken) { mutableStateOf(state.streamingToken) }
+    LaunchedEffect(state.streamingToken) {
+        if (tokenDraft.isBlank()) tokenDraft = state.streamingToken
+    }
+    var tokenVisible by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -88,7 +118,7 @@ fun SettingsScreen(
             }
 
             SectionCard("Verbindung") {
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Automatisch verbinden", style = MaterialTheme.typography.titleMedium)
                         Text(
@@ -99,6 +129,112 @@ fun SettingsScreen(
                     }
                     Switch(checked = state.autoConnect, onCheckedChange = vm::setAutoConnect)
                 }
+            }
+
+            SectionCard("Darstellung", leadingIcon = Icons.Filled.DarkMode) {
+                Text(
+                    "Theme",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(Modifier.height(8.dp))
+                val options = listOf(
+                    ThemeMode.SYSTEM to "System",
+                    ThemeMode.LIGHT to "Light",
+                    ThemeMode.DARK to "Dark",
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    options.forEachIndexed { i, (mode, label) ->
+                        SegmentedButton(
+                            selected = state.themeMode == mode,
+                            onClick = { vm.setThemeMode(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(i, options.size),
+                        ) { Text(label) }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Dynamische Farben (Material You / Monet) bleiben aktiv. " +
+                        "System folgt der Geräteeinstellung.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            SectionCard("Live-Streaming an Dashboard", leadingIcon = Icons.Filled.Bolt) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Telemetry an Server pushen", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            streamingStatusText(streamingStatus, state.streamingEnabled),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = streamingStatusColor(streamingStatus, state.streamingEnabled),
+                        )
+                    }
+                    Switch(
+                        checked = state.streamingEnabled,
+                        onCheckedChange = vm::setStreamingEnabled,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = urlDraft,
+                    onValueChange = { urlDraft = it },
+                    label = { Text("WebSocket-URL") },
+                    placeholder = { Text("wss://cockpit.3dns.eu/ws/ingest") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = tokenDraft,
+                    onValueChange = { tokenDraft = it },
+                    label = { Text("Token (optional)") },
+                    placeholder = { Text("INGEST_TOKEN des Servers") },
+                    singleLine = true,
+                    visualTransformation = if (tokenVisible) androidx.compose.ui.text.input.VisualTransformation.None
+                                            else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { tokenVisible = !tokenVisible }) {
+                            Icon(
+                                if (tokenVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                contentDescription = if (tokenVisible) "Token verbergen" else "Token zeigen",
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Button(
+                        onClick = {
+                            vm.setStreamingUrl(urlDraft)
+                            vm.setStreamingToken(tokenDraft)
+                        },
+                        enabled = urlDraft != state.streamingUrl || tokenDraft != state.streamingToken,
+                        modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.large,
+                    ) { Text("Speichern") }
+                    FilledTonalButton(
+                        onClick = {
+                            urlDraft = ""; tokenDraft = ""
+                            vm.setStreamingUrl(""); vm.setStreamingToken("")
+                        },
+                        enabled = state.streamingUrl.isNotEmpty() || state.streamingToken.isNotEmpty(),
+                        modifier = Modifier.weight(1f),
+                        shape = MaterialTheme.shapes.large,
+                    ) { Text("Leeren") }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Endpoint des Node-Dashboards (siehe web/ im Repo). Token wird als " +
+                        "Authorization-Bearer-Header übertragen — leer lassen wenn der " +
+                        "Server ohne INGEST_TOKEN läuft.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             SectionCard("PIN ändern") {
@@ -124,6 +260,10 @@ fun SettingsScreen(
                 }
             }
 
+            SectionCard("Über die App") {
+                AboutContent()
+            }
+
             SectionCard("Gefahrenzone") {
                 FilledTonalButton(
                     onClick = { vm.forgetScooter(); onForget() },
@@ -134,11 +274,85 @@ fun SettingsScreen(
             Spacer(Modifier.height(20.dp))
         }
     }
-
 }
 
 @Composable
-private fun SectionCard(title: String, content: @Composable () -> Unit) {
+private fun streamingStatusText(status: TelemetryStreamer.Status, enabled: Boolean): String =
+    when {
+        !enabled -> "Aus"
+        status == TelemetryStreamer.Status.Connected -> "Verbunden – sendet Live-Daten"
+        status == TelemetryStreamer.Status.Connecting -> "Verbinde…"
+        status == TelemetryStreamer.Status.Failed -> "Fehlgeschlagen – retry läuft"
+        else -> "Wartet auf Konfiguration"
+    }
+
+@Composable
+private fun streamingStatusColor(status: TelemetryStreamer.Status, enabled: Boolean): Color =
+    when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+        status == TelemetryStreamer.Status.Connected -> MaterialTheme.colorScheme.primary
+        status == TelemetryStreamer.Status.Failed -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+@Composable
+private fun AboutContent() {
+    val ctx = LocalContext.current
+    fun open(url: String) {
+        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "Open-Source-App für ePowerFun-Scooter (verifiziert auf EPF Pulse Plus).",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text("Autor: DoM!niC", style = MaterialTheme.typography.bodyMedium)
+        AboutLink(label = "Repo: git.3dns.eu/dom1nic/epf_cockpit_android") {
+            open("https://git.3dns.eu/dom1nic/epf_cockpit_android")
+        }
+        Spacer(Modifier.size(4.dp))
+        Text("Quellen:", style = MaterialTheme.typography.labelLarge)
+        AboutLink(label = "ZydDash BLE-Telemetry-Doku (ePF-1)") {
+            open("https://github.com/Ennar1991/ZydDash/blob/main/BLE_Telemetry.md")
+        }
+        AboutLink(label = "irmo.de — E-Scooter Bluetooth Hacking") {
+            open("https://www.irmo.de/2023/11/08/e-scooter-bluetooth-hacking/")
+        }
+        AboutLink(label = "escooter-treff.de Forenthread") {
+            open("https://www.escooter-treff.de/threads/zydtech-controller-bluetooth-protokoll-reverse-engineering.12207/")
+        }
+    }
+}
+
+@Composable
+private fun AboutLink(label: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.weight(1f),
+        )
+        Icon(
+            Icons.AutoMirrored.Filled.OpenInNew,
+            contentDescription = null,
+            modifier = Modifier.size(16.dp),
+            tint = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+@Composable
+private fun SectionCard(
+    title: String,
+    leadingIcon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    content: @Composable () -> Unit,
+) {
     Card(
         shape = MaterialTheme.shapes.large,
         colors = CardDefaults.cardColors(
@@ -147,11 +361,21 @@ private fun SectionCard(title: String, content: @Composable () -> Unit) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(20.dp)) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (leadingIcon != null) {
+                    Icon(
+                        leadingIcon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.size(8.dp))
+                }
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
             Spacer(Modifier.height(12.dp))
             content()
         }

@@ -6,6 +6,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 // Optionales Release-Keystore. Quellen in Reihenfolge:
@@ -108,7 +109,10 @@ android {
         )
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     packaging {
         resources {
@@ -151,4 +155,8 @@ dependencies {
     implementation(libs.nordic.scanner)
 
     implementation(libs.accompanist.permissions)
+
+    // Telemetry-Streaming an Node-Dashboard (WebSocket-Client + JSON)
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
 }

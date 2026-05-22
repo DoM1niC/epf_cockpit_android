@@ -29,6 +29,7 @@ fun AppNav() {
                         popUpTo(Routes.SCAN) { inclusive = false }
                     }
                 },
+                onOpenSettings = { nav.navigate(Routes.SETTINGS) },
             )
         }
         composable(Routes.PIN) {

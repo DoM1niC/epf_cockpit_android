@@ -7,7 +7,8 @@
     </style>
 
     <style name="Theme.EpfCockpit.Splash" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">@android:color/black</item>
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_logo</item>
         <item name="postSplashScreenTheme">@style/Theme.EpfCockpit</item>
     </style>
 </resources>

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -69,6 +70,7 @@ import eu.dns3d.epfcockpit.util.bluetoothPermissions
 @Composable
 fun ScanScreen(
     onConnected: () -> Unit,
+    onOpenSettings: () -> Unit,
     vm: ScanViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -114,6 +116,9 @@ fun ScanScreen(
                             tint = if (state.showAllDevices) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Einstellungen")
                     }
                     IconButton(onClick = { showAbout = true }) {
                         Icon(Icons.Filled.HelpOutline, contentDescription = "Info")

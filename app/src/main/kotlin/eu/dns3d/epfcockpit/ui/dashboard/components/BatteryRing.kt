@@ -5,7 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,7 +38,7 @@ fun BatteryRing(
     val track = MaterialTheme.colorScheme.surfaceContainerHighest
 
     Box(modifier = modifier.aspectRatio(1f), contentAlignment = Alignment.Center) {
-        Canvas(Modifier.fillMaxWidth().aspectRatio(1f)) {
+        Canvas(Modifier.fillMaxSize()) {
             val strokeWidth = size.minDimension * 0.12f
             val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             val inset = strokeWidth / 2f

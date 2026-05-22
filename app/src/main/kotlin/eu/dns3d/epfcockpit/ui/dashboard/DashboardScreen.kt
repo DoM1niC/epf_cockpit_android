@@ -1,12 +1,14 @@
 package eu.dns3d.epfcockpit.ui.dashboard
 
 import android.app.Activity
+import android.content.res.Configuration
 import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -48,6 +50,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -99,100 +102,218 @@ fun DashboardScreen(
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            // Pulse-Plus advertises no programmable gear over BLE (the official
-            // app has no gear UI either), so we just scale to the bike's legal
-            // top speed of 20 km/h with a little headroom for spikes.
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                SpeedGauge(
-                    speedKmh = telemetry?.speedKmh ?: 0f,
-                    maxSpeedKmh = 25f,
-                    modifier = Modifier.fillMaxWidth(0.9f),
-                )
-            }
-
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                BatteryRing(
-                    percent = telemetry?.batteryPercent ?: 0,
-                    modifier = Modifier.fillMaxWidth(0.55f),
-                )
-            }
-            // Rekuperations-Chip nur sichtbar wenn aktiv — sitzt jetzt unter
-            // dem Akku-Ring, daher braucht's keine leere Spalte mehr daneben.
-            if (telemetry?.isRegenerating == true) {
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    StatusRow(telemetry)
-                }
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatTile(
-                    label = "Leistung",
-                    value = "%.0f".format(telemetry?.absWatts ?: 0f),
-                    unit = if (telemetry?.isRegenerating == true) "W ⏎" else "W",
-                    icon = Icons.Filled.Bolt,
-                    modifier = Modifier.weight(1f),
-                    accent = MaterialTheme.colorScheme.tertiary,
-                )
-                StatTile(
-                    label = "Trip",
-                    value = "%.1f".format(telemetry?.tripKm ?: 0f),
-                    unit = "km",
-                    icon = Icons.Filled.Route,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatTile(
-                    label = "Spannung",
-                    value = "%.1f".format(telemetry?.voltage ?: 0f),
-                    unit = "V",
-                    icon = Icons.Filled.Bolt,
-                    modifier = Modifier.weight(1f),
-                )
-                StatTile(
-                    label = "Strom",
-                    value = "%.1f".format(telemetry?.currentAmps ?: 0f),
-                    unit = "A",
-                    icon = Icons.Filled.ElectricalServices,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatTile(
-                    label = "Controller",
-                    value = "${telemetry?.controllerTempC ?: 0}",
-                    unit = "°C",
-                    icon = Icons.Filled.Thermostat,
-                    modifier = Modifier.weight(1f),
-                )
-                StatTile(
-                    label = "Gesamt",
-                    value = "%.1f".format(telemetry?.totalKm ?: 0f),
-                    unit = "km",
-                    icon = Icons.Filled.Speed,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            // Sniff-verified Pulse Plus controls
-            ControlSection(
+        val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+        if (landscape) {
+            LandscapeLayout(
+                padding = padding,
+                telemetry = telemetry,
                 parking = parking,
                 blinkertonOff = blinkertonOff,
                 rideMode = state.rideMode,
-                locked = controlsLocked,
+                controlsLocked = controlsLocked,
                 onParkingToggle = vm::toggleParking,
                 onBlinkertonToggle = vm::toggleBlinkerton,
                 onRideModeChange = vm::setRideMode,
             )
+        } else {
+            PortraitLayout(
+                padding = padding,
+                telemetry = telemetry,
+                parking = parking,
+                blinkertonOff = blinkertonOff,
+                rideMode = state.rideMode,
+                controlsLocked = controlsLocked,
+                onParkingToggle = vm::toggleParking,
+                onBlinkertonToggle = vm::toggleBlinkerton,
+                onRideModeChange = vm::setRideMode,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PortraitLayout(
+    padding: androidx.compose.foundation.layout.PaddingValues,
+    telemetry: Telemetry?,
+    parking: Boolean,
+    blinkertonOff: Boolean?,
+    rideMode: RideMode,
+    controlsLocked: Boolean,
+    onParkingToggle: () -> Unit,
+    onBlinkertonToggle: () -> Unit,
+    onRideModeChange: (RideMode) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            SpeedGauge(
+                speedKmh = telemetry?.speedKmh ?: 0f,
+                maxSpeedKmh = 25f,
+                modifier = Modifier.fillMaxWidth(0.9f),
+            )
+        }
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            BatteryRing(
+                percent = telemetry?.batteryPercent ?: 0,
+                modifier = Modifier.fillMaxWidth(0.55f),
+            )
+        }
+        if (telemetry?.isRegenerating == true) {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                StatusRow(telemetry)
+            }
+        }
+        StatGrid(telemetry)
+        ControlSection(
+            parking = parking,
+            blinkertonOff = blinkertonOff,
+            rideMode = rideMode,
+            locked = controlsLocked,
+            onParkingToggle = onParkingToggle,
+            onBlinkertonToggle = onBlinkertonToggle,
+            onRideModeChange = onRideModeChange,
+        )
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun LandscapeLayout(
+    padding: androidx.compose.foundation.layout.PaddingValues,
+    telemetry: Telemetry?,
+    parking: Boolean,
+    blinkertonOff: Boolean?,
+    rideMode: RideMode,
+    controlsLocked: Boolean,
+    onParkingToggle: () -> Unit,
+    onBlinkertonToggle: () -> Unit,
+    onRideModeChange: (RideMode) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(padding)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        // Left: big speed gauge dominates the road-relevant info
+        Box(
+            modifier = Modifier
+                .weight(1.1f)
+                .fillMaxSize(),
+            contentAlignment = Alignment.Center,
+        ) {
+            SpeedGauge(
+                speedKmh = telemetry?.speedKmh ?: 0f,
+                maxSpeedKmh = 25f,
+                modifier = Modifier.fillMaxHeight(0.95f),
+            )
+        }
+        // Right: battery + stats + controls in a scrollable column
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BatteryRing(
+                    percent = telemetry?.batteryPercent ?: 0,
+                    modifier = Modifier.fillMaxWidth(0.40f),
+                )
+                Column(
+                    Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (telemetry?.isRegenerating == true) StatusRow(telemetry)
+                    StatTile(
+                        label = "Leistung",
+                        value = "%.0f".format(telemetry?.absWatts ?: 0f),
+                        unit = if (telemetry?.isRegenerating == true) "W ⏎" else "W",
+                        icon = Icons.Filled.Bolt,
+                        modifier = Modifier.fillMaxWidth(),
+                        accent = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+            }
+            StatGrid(telemetry)
+            ControlSection(
+                parking = parking,
+                blinkertonOff = blinkertonOff,
+                rideMode = rideMode,
+                locked = controlsLocked,
+                onParkingToggle = onParkingToggle,
+                onBlinkertonToggle = onBlinkertonToggle,
+                onRideModeChange = onRideModeChange,
+            )
             Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+/** Six stat tiles in three rows of two — same in portrait and landscape. */
+@Composable
+private fun StatGrid(telemetry: Telemetry?) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            StatTile(
+                label = "Trip",
+                value = "%.1f".format(telemetry?.tripKm ?: 0f),
+                unit = "km",
+                icon = Icons.Filled.Route,
+                modifier = Modifier.weight(1f),
+            )
+            StatTile(
+                label = "Gesamt",
+                value = "%.1f".format(telemetry?.totalKm ?: 0f),
+                unit = "km",
+                icon = Icons.Filled.Speed,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            StatTile(
+                label = "Spannung",
+                value = "%.1f".format(telemetry?.voltage ?: 0f),
+                unit = "V",
+                icon = Icons.Filled.Bolt,
+                modifier = Modifier.weight(1f),
+            )
+            StatTile(
+                label = "Strom",
+                value = "%.1f".format(telemetry?.currentAmps ?: 0f),
+                unit = "A",
+                icon = Icons.Filled.ElectricalServices,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            StatTile(
+                label = "Controller",
+                value = "${telemetry?.controllerTempC ?: 0}",
+                unit = "°C",
+                icon = Icons.Filled.Thermostat,
+                modifier = Modifier.weight(1f),
+            )
+            StatTile(
+                label = "Leistung",
+                value = "%.0f".format(telemetry?.absWatts ?: 0f),
+                unit = if (telemetry?.isRegenerating == true) "W ⏎" else "W",
+                icon = Icons.Filled.Bolt,
+                modifier = Modifier.weight(1f),
+                accent = MaterialTheme.colorScheme.tertiary,
+            )
         }
     }
 }

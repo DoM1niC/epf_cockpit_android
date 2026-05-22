@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Splash-Logo (Android 12+ SplashScreen): innerhalb des sichtbaren
+  192dp-Kreises bleibt nur der zentrale ~160dp-Bereich frei vom System-Mask.
+  Alle Elemente liegen innerhalb r=72 um (96,96).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="192dp"
+    android:height="192dp"
+    android:viewportWidth="192"
+    android:viewportHeight="192">
+    <!-- Räder -->
+    <path
+        android:fillColor="#6FDBC2"
+        android:fillType="evenOdd"
+        android:pathData="M64,124 m-14,0 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0 z M64,124 m-5,0 a5,5 0 1,1 10,0 a5,5 0 1,1 -10,0 z M128,124 m-14,0 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0 z M128,124 m-5,0 a5,5 0 1,1 10,0 a5,5 0 1,1 -10,0 z"/>
+    <!-- Deck -->
+    <path
+        android:fillColor="#6FDBC2"
+        android:pathData="M52,104 L140,104 L140,114 L52,114 Z"/>
+    <!-- Stem -->
+    <path
+        android:fillColor="#6FDBC2"
+        android:pathData="M124,104 L134,104 L110,56 L102,56 Z"/>
+    <!-- Lenker -->
+    <path
+        android:fillColor="#6FDBC2"
+        android:pathData="M78,50 L130,50 L130,62 L78,62 Z"/>
+    <!-- Griff-Caps -->
+    <path
+        android:fillColor="#6FDBC2"
+        android:pathData="M78,56 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 z M130,56 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 z"/>
+    <!-- Scheinwerfer -->
+    <path
+        android:fillColor="#FFB300"
+        android:pathData="M118,52 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0 z"/>
+</vector>
