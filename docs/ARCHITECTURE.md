@@ -26,13 +26,19 @@ app/src/main/kotlin/eu/dns3d/epfcockpit/
 │   ├── ScooterManager.kt        // BleManager-Subklasse (Nordic)
 │   └── BleRepository.kt         // @Singleton, einziger BLE-Entry-Point
 ├── data/
-│   ├── SettingsStore.kt         // DataStore-wrapped Preferences inkl.
-│   │                            //   themeMode + streaming{Url,Token,Enabled}
+│   ├── SettingsStore.kt         // DataStore inkl. themeMode + streaming{Url,Token,Enabled}
+│   │                            //   + startupPromptDone
 │   ├── Trip*.kt                 // Room: Trip-Entity + DAO + DB
-│   └── TripRecorder.kt          // Aggregiert Telemetry → Trip-Aggregat
+│   ├── TripRecorder.kt          // Aggregiert Telemetry → Trip-Aggregat (pure, kein State)
+│   └── TripCoordinator.kt       // @Singleton, hängt am BleRepo, persistiert Trips
+│                                //   lifecycle-unabhängig
 ├── streaming/
 │   ├── StreamMessage.kt         // Sealed JSON-Wire-Format (kotlinx.serialization)
 │   └── TelemetryStreamer.kt     // @Singleton, OkHttp-WebSocket-Push an web/-Server
+├── service/
+│   ├── EpfConnectionService.kt  // Foreground-Service, Live-Notification mit km/h+Akku,
+│   │                            //   onTaskRemoved → BLE disconnect + exitProcess
+│   └── ForegroundController.kt  // @Singleton, mapped connection-state → start/stop service
 ├── di/
 │   └── AppModule.kt             // Hilt-Provider für Room
 ├── ui/
@@ -42,7 +48,8 @@ app/src/main/kotlin/eu/dns3d/epfcockpit/
 │   ├── auth/                    // PinScreen + ViewModel
 │   ├── dashboard/               // DashboardScreen + ViewModel + components
 │   ├── settings/                // SettingsScreen + ViewModel (Theme/Streaming/About)
-│   └── history/                 // HistoryScreen + ViewModel
+│   ├── history/                 // HistoryScreen + ViewModel
+│   └── onboarding/              // StartupPermissionsDialog (Battery-Opt + Notif)
 └── util/
     └── Permissions.kt           // BLUETOOTH_SCAN/CONNECT request list
 
@@ -189,3 +196,45 @@ gerade die Settings öffnet). Drei Coroutines auf einem eigenen
 Reconnect-Loop mit Exponential-Backoff bis 30 s. `CancellationException`
 explizit erlaubt (Job-Cancel ist normal). Status wird als `StateFlow`
 exposed und im Settings-Screen live angezeigt.
+
+## Background-Lifecycle (Foreground-Service + Trip-Recording)
+
+Damit die App auch verbunden bleibt wenn der Screen aus geht oder der
+User wegnavigiert, hängt eine Lifecycle-Kette an `BleRepository.connection`:
+
+```
+BleRepository.connection
+        │
+        ├─► ForegroundController (@Singleton)
+        │       │ (Connecting/Connected → startService; sonst stopService)
+        │       ▼
+        │   EpfConnectionService (Foreground)
+        │       │ (combine telemetry+connection, update Notification)
+        │       │ onTaskRemoved → ble.disconnect() + stopSelf() + exitProcess
+        │       ▼
+        │   "X.X km/h • Akku Y% • Z W" im Status-Bar
+        │
+        ├─► TripCoordinator (@Singleton)
+        │       │ (Connected → neuer TripRecorder)
+        │       │ (Disconnected → finalize + tripDao.insert)
+        │       ▼
+        │   Room (Trip-Historie)
+        │
+        └─► TelemetryStreamer (@Singleton) → Web-Dashboard
+```
+
+Alle drei `@Singleton`s werden in `MainActivity` per `@Inject` referenziert
+damit Hilt sie beim ersten Activity-Create instanziiert — ohne diese
+Referenz blieben sie tot, weil Hilt Singletons erst on-demand baut.
+
+`onTaskRemoved` im FGS macht den "wenn aus Recents geswiped → komplett zu"-
+Effekt: `ble.disconnect()` → Heartbeat-Job stoppt → BLE-GATT zu, dann
+`stopSelf()` → Notification weg, dann `exitProcess(0)` → Service-Process
+beendet. Sonst würde der FGS per Default weiterleben.
+
+`TripCoordinator` ist die Antwort auf "wann startet eine Fahrt?" — sobald
+`BleRepository.connection` auf `Connected` springt UND der erste Telemetry-
+Frame eintrifft, wird `startedAt` gesetzt. Finalisiert wird auf jeden
+`Disconnected`/`Failed`-Transition; in Room landet nur was ≥10 m
+zurückgelegt hat (sonst wären "App auf, kurz gechecked, wieder zu" als
+Geister-Trips in der Historie).

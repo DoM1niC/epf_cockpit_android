@@ -172,3 +172,42 @@ Properties → *Refresh cache of current page*. OBS cached agressiv, vor
 allem nach Token-Wechsel. Wenn Token im URL fehlt, zeigt OBS die
 401-HTML-Seite (dark, fällt im Stream nicht auf) — vorher in einem
 normalen Tab gegentesten.
+
+## Foreground-Service + Background-Lifecycle
+
+### Notification erscheint nicht obwohl verbunden
+
+- Notification-Permission steht auf "Verweigert" → in den App-Settings
+  manuell erlauben, oder App killen + neu starten → Startup-Dialog kommt
+  wieder. Logcat: `NotificationManager: notify: permission denied`.
+- `IMPORTANCE_LOW`-Channel ist standardmäßig kollabiert auf manchen
+  ROMs (OxygenOS, MIUI) — Pull-down ausklappen, Notification ist da.
+
+### App-Verbindung stirbt nach 5-10 Minuten Standby
+
+Akku-Optimierung ist noch aktiv. Doze friert auch Foreground-Services
+ein bei aggressiven Vendor-ROMs (Xiaomi, Huawei, OnePlus). Fix:
+- Startup-Dialog erneut triggern: App-Daten löschen oder
+  `adb shell pm clear eu.dns3d.epfcockpit.debug`
+- Manuell: System-Settings → Apps → EPF Cockpit → Akku → "Uneingeschränkt"
+- Auf besonders aggressiven ROMs zusätzlich: "Im Hintergrund starten
+  erlauben" / "Auto-Start aktivieren"
+
+### Trip-Recording stoppt zu früh
+
+Nach dem Refactor (TripCoordinator @Singleton) sollte das nicht mehr
+passieren. Falls doch:
+- `adb logcat -s TripCoordinator:V BleRepository:V` → schauen ob
+  `Disconnected`-State zwischendurch kommt
+- Privacy-MAC-Rotation kann eine kurze Disconnect/Reconnect-Spitze
+  triggern; das finalisiert den Trip vorzeitig. Workaround: in der App
+  Auto-Reconnect ausschalten wenn die Fahrt am Stück recorded werden soll.
+
+### App ist nach App-Swipe weg, BLE bleibt aber an
+
+Sollte nicht passieren — `EpfConnectionService.onTaskRemoved` ruft
+`exitProcess(0)`. Falls doch:
+- Logcat: `EpfConnectionService: task removed — full shutdown` sollte
+  zu sehen sein
+- Wenn nicht: Service wurde nicht von unserem Activity-Task gestartet
+  (z.B. Hilt-Race beim allerersten Start) — App neu starten reicht

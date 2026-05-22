@@ -39,6 +39,16 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
 - Fahrten-Logging in Room: Strecke, Ø/Max-Geschwindigkeit, Energie, Akku-Verbrauch
 - Letzter Ride-Modus wird gespeichert und beim Start wiederhergestellt
 
+### Background-Lifecycle
+- **Foreground-Service** mit Live-Notification (km/h + Akku + Watt) hält die
+  BLE-Verbindung am Leben, auch wenn der Screen aus geht oder du wegnavigierst
+- **Trip-Recording** läuft im `@Singleton`, überlebt Screen-Navigation —
+  startet mit dem ersten Telemetry-Frame nach Connect, finalisiert auf Disconnect
+- **Exit-on-Swipe**: wenn du die App aus den Recents wegwischst, killt der
+  Service sich + den Prozess komplett (kein lingering BLE-Heartbeat)
+- **Startup-Onboarding**: einmaliger Dialog fragt POST_NOTIFICATIONS +
+  Akku-Optimierung-aus ab, damit der FGS nicht von Doze gekillt wird
+
 ### Design
 - **Material 3 Expressive** mit dem neuen Type-Scale und größeren Corner-Radii
 - **Dynamic Color** (Monet) ab Android 12 — App-Farben folgen dem Wallpaper
