@@ -22,13 +22,16 @@ sudo -u root npm ci          # produktion, lock-strict
 sudo -u root npm run build   # tailwind + vendor copy
 ```
 
-## 2. Service-User + Datenverzeichnis
+## 2. Service-User
 
 ```bash
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin epfcockpit
-sudo install -d -o epfcockpit -g epfcockpit -m 0750 /var/lib/epf-cockpit-web
 sudo chown -R epfcockpit:epfcockpit /opt/epf-cockpit-src
 ```
+
+Das Datenverzeichnis `/var/lib/epf-cockpit-web/` legt systemd via
+`StateDirectory=` beim ersten Start automatisch an (Mode 0750, owned by
+`epfcockpit:epfcockpit`).
 
 ## 3. Tokens generieren + .env anlegen
 

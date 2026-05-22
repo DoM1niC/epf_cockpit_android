@@ -4,9 +4,9 @@
 #
 # Setup-Schritte (einmalig, als root):
 #
-#   # 1. dedizierten User + Datenverzeichnis anlegen
+#   # 1. dedizierten User anlegen (das Daten-Verzeichnis macht systemd via
+#   #    StateDirectory= beim ersten Start selbst, mit korrekter Ownership)
 #   useradd --system --no-create-home --shell /usr/sbin/nologin epfcockpit
-#   install -d -o epfcockpit -g epfcockpit -m 0750 /var/lib/epf-cockpit-web
 #
 #   # 2. App-Code nach /opt/epf-cockpit-web deployen (git clone + npm ci + build)
 #   git clone https://git.3dns.eu/dom1nic/epf_cockpit_android.git /opt/epf-cockpit-src
@@ -74,8 +74,12 @@ SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@mount @debug @cpu-emulation @obsolete @privileged @raw-io @reboot @swap
 
-# Nur diese Pfade dürfen geschrieben werden (sqlite-DB + WAL/SHM Sidecars).
-ReadWritePaths=/var/lib/epf-cockpit-web
+# systemd legt /var/lib/epf-cockpit-web mit dem Service-User an (Mode 0750),
+# setzt $STATE_DIRECTORY und macht den Pfad automatisch read-write trotz
+# ProtectSystem=strict. Spart das manuelle `install -d` aus dem Deploy-Setup
+# und stellt sicher, dass das Verzeichnis bei einem frischen Host immer da ist.
+StateDirectory=epf-cockpit-web
+StateDirectoryMode=0750
 
 # Netz: nur IPv4 + IPv6 TCP/UDP, kein Raw-Socket, kein Multicast.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
