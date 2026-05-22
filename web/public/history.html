@@ -8,16 +8,16 @@
   <link rel="stylesheet" href="/vendor/uplot/uPlot.min.css" />
 </head>
 <body class="h-full bg-[var(--color-surface-0)] text-[var(--color-on-surface)] antialiased">
-  <header class="px-6 py-4 flex items-center gap-3 border-b border-white/5">
-    <h1 class="text-xl font-semibold tracking-tight">Trip History</h1>
-    <nav class="ml-auto flex gap-4 text-sm text-[var(--color-on-surface-dim)]">
+  <header class="px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-white/5 sticky top-0 z-10 bg-[var(--color-surface-0)]/90 backdrop-blur">
+    <h1 class="text-lg sm:text-xl font-semibold tracking-tight">Trip History</h1>
+    <nav class="ml-auto flex gap-3 sm:gap-4 text-sm text-[var(--color-on-surface-dim)]">
       <a class="hover:text-[var(--color-brand-teal)]" href="/">Live</a>
       <a class="hover:text-[var(--color-brand-teal)]" href="/history">History</a>
       <a class="hover:text-[var(--color-brand-teal)]" href="/obs">OBS</a>
     </nav>
   </header>
 
-  <main class="p-6 max-w-5xl mx-auto">
+  <main class="p-3 sm:p-6 max-w-5xl mx-auto">
     <div id="trip-list" class="grid gap-3"></div>
     <div id="empty-msg"
          class="hidden text-center text-[var(--color-on-surface-dim)] py-12">

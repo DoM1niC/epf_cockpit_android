@@ -44,10 +44,16 @@
   }
 
   // ---------- Charts ----------
+  // Auf schmalen Viewports (Mobile) ist 200 px im Quadrat-Verhältnis zu hoch
+  // und drängt die Tile-Reihe nach unten. 160 px gibt mehr Platz für die Werte.
+  function chartHeight() {
+    return window.innerWidth < 640 ? 160 : 200;
+  }
+
   function makeChart(host, label, color) {
     const opts = {
       width: host.clientWidth || 600,
-      height: 200,
+      height: chartHeight(),
       scales: { x: { time: true } },
       legend: { show: false },
       cursor: { drag: { x: false, y: false } },
@@ -74,10 +80,12 @@
 
   // Resize charts on viewport change so the cards stay tidy.
   function resizeCharts() {
-    chartSpeed.setSize({ width: $('chart-speed').clientWidth, height: 200 });
-    chartPower.setSize({ width: $('chart-power').clientWidth, height: 200 });
+    const h = chartHeight();
+    chartSpeed.setSize({ width: $('chart-speed').clientWidth, height: h });
+    chartPower.setSize({ width: $('chart-power').clientWidth, height: h });
   }
   window.addEventListener('resize', resizeCharts);
+  window.addEventListener('orientationchange', resizeCharts);
 
   function pushPoint(ts, speedKmh, powerW) {
     // uPlot uses seconds for time scales.

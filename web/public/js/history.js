@@ -60,7 +60,7 @@
           <div class="font-medium">${fmtDate(trip.started_at)}</div>
           <div class="text-sm text-[var(--color-on-surface-dim)]">${trip.scooter_name || ''}</div>
         </header>
-        <dl class="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+        <dl class="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm tabular-nums">
           <div><dt class="text-[var(--color-on-surface-dim)]">Distance</dt><dd>${fmtNum(trip.distance_km, 2)} km</dd></div>
           <div><dt class="text-[var(--color-on-surface-dim)]">Duration</dt><dd>${fmtDuration(trip.duration_s)}</dd></div>
           <div><dt class="text-[var(--color-on-surface-dim)]">Max speed</dt><dd>${fmtNum(trip.max_speed_kmh, 1)} km/h</dd></div>
@@ -95,7 +95,7 @@
 
     new uPlot({
       width: host.clientWidth || 600,
-      height: 180,
+      height: window.innerWidth < 640 ? 150 : 180,
       scales: { x: { time: true } },
       legend: { show: false },
       cursor: { drag: { x: true, y: false } },
