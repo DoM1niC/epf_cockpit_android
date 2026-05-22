@@ -81,6 +81,14 @@ const stmts = {
      ORDER BY started_at DESC
      LIMIT ?
   `),
+  listTripsInRange: db.prepare(`
+    SELECT id, started_at, ended_at, distance_km, energy_wh,
+           max_speed_kmh, avg_speed_kmh, duration_s, scooter_name
+      FROM trips
+     WHERE started_at BETWEEN @from AND @to
+     ORDER BY started_at DESC
+     LIMIT @limit
+  `),
 
   getTrip: db.prepare(`
     SELECT id, started_at, ended_at, distance_km, energy_wh,
@@ -94,6 +102,17 @@ const stmts = {
       FROM telemetry
      WHERE trip_id = ?
      ORDER BY ts ASC
+  `),
+
+  // Retroaktives Linking: Telemetry-Frames die während der Fahrt eingelaufen
+  // sind aber noch keinen trip_id haben (weil der Client kein trip_start
+  // mehr sendet — trip_end ist self-contained), beim Trip-Finalize über das
+  // ts-Fenster nachtragen.
+  linkTelemetryToTrip: db.prepare(`
+    UPDATE telemetry
+       SET trip_id = @tripId
+     WHERE trip_id IS NULL
+       AND ts BETWEEN @startedAt AND @endedAt
   `)
 };
 
@@ -125,12 +144,23 @@ export function listTrips(limit = 100) {
   return stmts.listTrips.all(Math.max(1, Math.min(1000, limit | 0)));
 }
 
+export function listTripsInRange(from, to, limit = 1000) {
+  return stmts.listTripsInRange.all({
+    from, to,
+    limit: Math.max(1, Math.min(5000, limit | 0))
+  });
+}
+
 export function getTrip(id) {
   return stmts.getTrip.get(id);
 }
 
 export function getTripSamples(id) {
   return stmts.getTripSamples.all(id);
+}
+
+export function linkTelemetryToTrip(args) {
+  return stmts.linkTelemetryToTrip.run(args);
 }
 
 /**

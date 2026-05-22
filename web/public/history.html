@@ -17,11 +17,16 @@
     </nav>
   </header>
 
-  <main class="p-3 sm:p-6 max-w-5xl mx-auto">
+  <main class="p-3 sm:p-6 max-w-5xl mx-auto grid gap-4">
+    <div class="flex items-center gap-2 flex-wrap">
+      <span class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mr-1">Zeitraum</span>
+      <div id="filter-chips" class="flex gap-1.5 flex-wrap"></div>
+      <span id="filter-status" class="ml-auto text-xs text-[var(--color-on-surface-dim)]"></span>
+    </div>
     <div id="trip-list" class="grid gap-3"></div>
     <div id="empty-msg"
          class="hidden text-center text-[var(--color-on-surface-dim)] py-12">
-      No trips recorded yet.
+      Keine Fahrten in diesem Zeitraum.
     </div>
   </main>
 

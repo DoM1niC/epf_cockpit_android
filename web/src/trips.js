@@ -3,7 +3,7 @@
 // our own current-trip pointer so telemetry inserts can always be tagged
 // with a trip_id (or null when no trip is active).
 
-import { startTrip, finalizeTripTx } from './db.js';
+import { startTrip, finalizeTripTx, linkTelemetryToTrip } from './db.js';
 
 let currentTripId = null;
 
@@ -34,14 +34,21 @@ export function handleTripEnd(payload, fallbackScooterName = null) {
     startedAt: payload.startedAt ?? payload.ts ?? Date.now(),
     scooterName: payload.scooterAddress ?? fallbackScooterName
   });
+  const endedAt = payload.ts ?? Date.now();
+  const startedAt = payload.startedAt ?? endedAt;
   finalizeTripTx({
     id,
-    endedAt: payload.ts ?? Date.now(),
+    endedAt,
     distanceKm: payload.distanceKm ?? null,
     energyWh: payload.energyWh ?? null,
     maxSpeedKmh: payload.maxSpeedKmh ?? null,
     avgSpeedKmh: payload.avgSpeedKmh ?? null,
     durationS: payload.durationS ?? null
   });
+  // Retroaktiv alle Telemetry-Frames die zwischen startedAt und endedAt
+  // eingelaufen sind aber noch keinen trip_id haben, an diese Fahrt
+  // hängen. Damit die Detail-Ansicht "no samples" nicht mehr zeigt für
+  // Fahrten die live gestreamt wurden.
+  linkTelemetryToTrip({ tripId: id, startedAt, endedAt });
   if (id === currentTripId) currentTripId = null;
 }

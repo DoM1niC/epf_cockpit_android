@@ -124,19 +124,99 @@
     });
   }
 
-  async function load() {
-    const r = await window.EpfAuth.fetchAuthed('/api/trips?limit=100');
-    const { trips } = await r.json();
-    if (!trips || trips.length === 0) {
-      emptyMsg.classList.remove('hidden');
-      return;
-    }
-    list.innerHTML = trips.map(cardHtml).join('');
-    bindCardClicks();
+  // ---------- Filter ----------
+  // Berechnet [from, to] in ms. Wir nutzen kalendarische Grenzen (Tagesbeginn
+  // 00:00, Wochenanfang Montag) damit "Heute" wirklich nur heutige Trips
+  // zeigt, nicht "letzte 24h".
+  const FILTERS = [
+    { id: 'today',  label: 'Heute',       range: () => dayRange(0) },
+    { id: 'd7',     label: '7 Tage',      range: () => slidingRange(7 * 86_400_000) },
+    { id: 'd30',    label: '30 Tage',     range: () => slidingRange(30 * 86_400_000) },
+    { id: 'month',  label: 'Diesen Monat',range: () => monthRange(0) },
+    { id: 'year',   label: 'Dieses Jahr', range: () => yearRange(0) },
+    { id: 'all',    label: 'Alle',        range: () => null },
+  ];
+  let activeFilter = FILTERS[2]; // Default: 30 Tage
+
+  function dayRange(offsetDays) {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    d.setHours(0, 0, 0, 0);
+    const from = d.getTime();
+    return [from, from + 86_400_000];
+  }
+  function slidingRange(ms) {
+    const to = Date.now();
+    return [to - ms, to];
+  }
+  function monthRange(offset) {
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth() + offset, 1).getTime();
+    const to = new Date(now.getFullYear(), now.getMonth() + offset + 1, 1).getTime();
+    return [from, to];
+  }
+  function yearRange(offset) {
+    const now = new Date();
+    const from = new Date(now.getFullYear() + offset, 0, 1).getTime();
+    const to = new Date(now.getFullYear() + offset + 1, 0, 1).getTime();
+    return [from, to];
   }
 
-  load().catch(err => {
-    console.error(err);
-    list.innerHTML = '<div class="text-red-400">Failed to load trips.</div>';
-  });
+  function renderChips() {
+    const host = document.getElementById('filter-chips');
+    if (!host) return;
+    host.innerHTML = FILTERS.map(f => {
+      const active = f.id === activeFilter.id;
+      const cls = active
+        ? 'bg-[var(--color-brand-teal)] text-black'
+        : 'bg-[var(--color-surface-2)] text-[var(--color-on-surface-dim)] hover:text-white';
+      return `<button data-filter="${f.id}" class="filter-chip text-xs px-3 py-1 rounded-full ${cls}">${f.label}</button>`;
+    }).join('');
+    host.querySelectorAll('.filter-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const next = FILTERS.find(f => f.id === btn.dataset.filter);
+        if (!next || next.id === activeFilter.id) return;
+        activeFilter = next;
+        renderChips();
+        load();
+      });
+    });
+  }
+
+  function setStatus(text) {
+    const el = document.getElementById('filter-status');
+    if (el) el.textContent = text || '';
+  }
+
+  async function load() {
+    setStatus('Lade…');
+    emptyMsg.classList.add('hidden');
+    list.innerHTML = '';
+    const range = activeFilter.range();
+    const url = range
+      ? `/api/trips?from=${range[0]}&to=${range[1]}&limit=1000`
+      : `/api/trips?limit=1000`;
+    try {
+      const r = await window.EpfAuth.fetchAuthed(url);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const { trips } = await r.json();
+      if (!trips || trips.length === 0) {
+        emptyMsg.classList.remove('hidden');
+        setStatus('0 Fahrten');
+        return;
+      }
+      list.innerHTML = trips.map(cardHtml).join('');
+      bindCardClicks();
+      // Aggregat-Status für Quick-Glance: Anzahl + Summenstrecke.
+      const totalKm = trips.reduce((s, t) => s + (t.distance_km || 0), 0);
+      setStatus(`${trips.length} Fahrten · ${totalKm.toFixed(1)} km`);
+    } catch (err) {
+      console.error(err);
+      list.innerHTML = '<div class="text-red-400">Fehler beim Laden.</div>';
+      setStatus('Fehler');
+    }
+  }
+
+  renderChips();
+  load();
 })();

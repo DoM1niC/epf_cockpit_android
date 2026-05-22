@@ -1,7 +1,7 @@
 // routes.js — JSON API endpoints.
 
 import { Router } from 'express';
-import { listTrips, getTrip, getTripSamples, getTelemetryInRange } from './db.js';
+import { listTrips, listTripsInRange, getTrip, getTripSamples, getTelemetryInRange } from './db.js';
 import { getSnapshot } from './broadcast.js';
 
 export const api = Router();
@@ -29,6 +29,18 @@ api.get('/telemetry', (req, res) => {
 
 api.get('/trips', (req, res) => {
   const limit = Number.parseInt(req.query.limit, 10) || 100;
+  // Optional Range — wenn von/bis gesetzt, filtere auf started_at IN [from,to].
+  // Sonst Default: alle Trips bis `limit`.
+  const fromRaw = Number.parseInt(req.query.from, 10);
+  const toRaw = Number.parseInt(req.query.to, 10);
+  if (Number.isFinite(fromRaw) && Number.isFinite(toRaw)) {
+    if (fromRaw >= toRaw) {
+      res.status(400).json({ error: 'from_must_be_before_to' });
+      return;
+    }
+    res.json({ trips: listTripsInRange(fromRaw, toRaw, limit), from: fromRaw, to: toRaw });
+    return;
+  }
   res.json({ trips: listTrips(limit) });
 });
 
