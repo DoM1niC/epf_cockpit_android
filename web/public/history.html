@@ -9,24 +9,43 @@
 </head>
 <body class="h-full bg-[var(--color-surface-0)] text-[var(--color-on-surface)] antialiased">
   <header class="px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-white/5 sticky top-0 z-10 bg-[var(--color-surface-0)]/90 backdrop-blur">
-    <h1 class="text-lg sm:text-xl font-semibold tracking-tight">Fahrtverlauf</h1>
+    <h1 class="text-lg sm:text-xl font-semibold tracking-tight flex items-center gap-2">
+      <!-- history -->
+      <svg class="icon w-5 h-5 text-[var(--color-brand-teal)]" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+      Fahrtverlauf
+    </h1>
     <nav class="ml-auto flex gap-3 sm:gap-4 text-sm text-[var(--color-on-surface-dim)]">
-      <a class="hover:text-[var(--color-brand-teal)]" href="/">Live</a>
-      <a class="hover:text-[var(--color-brand-teal)]" href="/history">Verlauf</a>
-      <a class="hover:text-[var(--color-brand-teal)]" href="/obs">OBS</a>
+      <a class="hover:text-[var(--color-brand-teal)] inline-flex items-center gap-1.5" href="/">
+        <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Live
+      </a>
+      <a class="hover:text-[var(--color-brand-teal)] inline-flex items-center gap-1.5" href="/history">
+        <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+        Verlauf
+      </a>
+      <a class="hover:text-[var(--color-brand-teal)] inline-flex items-center gap-1.5" href="/obs">
+        <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>
+        OBS
+      </a>
     </nav>
   </header>
 
   <main class="p-3 sm:p-6 max-w-5xl mx-auto grid gap-4">
     <div class="flex items-center gap-2 flex-wrap">
-      <span class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mr-1">Zeitraum</span>
+      <span class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mr-1 inline-flex items-center gap-1.5">
+        <!-- calendar-range -->
+        <svg class="icon w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><path d="M17 14h-6"/><path d="M13 18H7"/></svg>
+        Zeitraum
+      </span>
       <div id="filter-chips" class="flex gap-1.5 flex-wrap"></div>
       <span id="filter-status" class="ml-auto text-xs text-[var(--color-on-surface-dim)]"></span>
     </div>
     <div id="trip-list" class="grid gap-3"></div>
     <div id="empty-msg"
          class="hidden text-center text-[var(--color-on-surface-dim)] py-12">
-      Keine Fahrten in diesem Zeitraum.
+      <!-- calendar-x -->
+      <svg class="icon w-12 h-12 mx-auto mb-3 opacity-40" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><line x1="10" x2="14" y1="14" y2="18"/><line x1="14" x2="10" y1="14" y2="18"/></svg>
+      <div>Keine Fahrten in diesem Zeitraum.</div>
     </div>
   </main>
 

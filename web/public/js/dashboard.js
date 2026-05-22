@@ -69,7 +69,7 @@
     return window.innerWidth < 640 ? 160 : 200;
   }
 
-  function makeChart(host, label, color) {
+  function makeChart(host, label, color, unit, digits) {
     const opts = {
       width: host.clientWidth || 600,
       height: chartHeight(),
@@ -88,28 +88,34 @@
           },
         },
       },
-      legend: { show: false },
+      // Legende EIN — zeigt beim Hover Zeit + aktuellen Wert an.
+      // isolate:true heißt: Klick auf eine Serie blendet andere aus (für uns
+      // egal, wir haben nur eine). live:true heißt: Werte unter dem Cursor
+      // werden in der Legende angezeigt.
+      legend: { show: true, live: true },
       cursor: { drag: { x: false, y: false } },
       axes: [
         { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' }, values: EU_AXIS_VALUES },
         { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' } }
       ],
       series: [
-        { value: cursorValue },
+        { label: 'Zeit', value: cursorValue },
         {
           label,
           stroke: color,
           width: 2,
           fill: color + '22',
-          spanGaps: true
+          spanGaps: true,
+          // Formatter für den Hover-Wert in der Legende.
+          value: (_self, v) => v == null ? '--' : `${v.toFixed(digits)} ${unit}`,
         }
       ]
     };
     return new uPlot(opts, [[], []], host);
   }
 
-  const chartSpeed = makeChart($('chart-speed'), 'km/h', '#4DD0E1');
-  const chartPower = makeChart($('chart-power'), 'W',    '#E91E63');
+  const chartSpeed = makeChart($('chart-speed'), 'km/h', '#4DD0E1', 'km/h', 1);
+  const chartPower = makeChart($('chart-power'), 'W',    '#E91E63', 'W',    0);
 
   // Resize charts on viewport change so the cards stay tidy.
   function resizeCharts() {

@@ -23,3 +23,31 @@
 
 /* uPlot host containers should never overflow tile cards */
 .uplot { width: 100% !important; }
+
+/* uPlot-Legende ans Dark-Theme angleichen.
+   Default ist hellgrauer Text auf weißem BG und nimmt full width — passt nicht
+   ins Card-Layout. Wir gleichen die Farben an, machen den Text klein und
+   geben ihm etwas Luft nach oben. */
+.uplot .u-legend {
+  color: var(--color-on-surface-dim);
+  font-size: 12px;
+  margin-top: 8px;
+  text-align: left;
+}
+.uplot .u-legend .u-label { color: var(--color-on-surface-dim); }
+.uplot .u-legend .u-value { color: var(--color-on-surface); font-variant-numeric: tabular-nums; }
+.uplot .u-legend tr { margin-right: 12px; }
+
+/* Lucide-Style-Icons: Stroke folgt currentColor, runde Joins.
+   In Markup einsetzen mit <svg class="icon w-4 h-4">…</svg>; größere
+   Varianten einfach via Tailwind-Sizing. */
+.icon {
+  display: inline-block;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -0.15em;
+}

@@ -53,20 +53,50 @@
     return v == null ? '--' : Number(v).toFixed(digits);
   }
 
+  // Kleines Lucide-Icon-Vokabular. fill=none + stroke=currentColor wird global
+  // in tailwind.css über .icon gesetzt, hier nur die <path>-Geometrie.
+  const ICONS = {
+    route:       '<path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/>',
+    clock:       '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    gauge:       '<path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/>',
+    trendingUp:  '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+    zap:         '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+    bike:        '<circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/>',
+    calendar:    '<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>',
+  };
+  function svg(key, cls = 'icon w-3.5 h-3.5') {
+    return `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[key]}</svg>`;
+  }
+
+  function statHtml(iconKey, label, value) {
+    return `
+      <div>
+        <dt class="text-[var(--color-on-surface-dim)] inline-flex items-center gap-1.5">
+          ${svg(iconKey)} ${label}
+        </dt>
+        <dd>${value}</dd>
+      </div>`;
+  }
+
   function cardHtml(trip) {
     return `
       <article data-trip-id="${trip.id}"
                class="rounded-2xl bg-[var(--color-surface-1)] p-4 cursor-pointer hover:bg-[var(--color-surface-2)] transition">
         <header class="flex items-baseline justify-between gap-3 flex-wrap">
-          <div class="font-medium">${fmtDate(trip.started_at)}</div>
-          <div class="text-sm text-[var(--color-on-surface-dim)]">${trip.scooter_name || ''}</div>
+          <div class="font-medium inline-flex items-center gap-2">
+            ${svg('calendar', 'icon w-4 h-4 text-[var(--color-on-surface-dim)]')}
+            ${fmtDate(trip.started_at)}
+          </div>
+          <div class="text-sm text-[var(--color-on-surface-dim)] inline-flex items-center gap-1.5">
+            ${trip.scooter_name ? svg('bike') + ' ' + trip.scooter_name : ''}
+          </div>
         </header>
         <dl class="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm tabular-nums">
-          <div><dt class="text-[var(--color-on-surface-dim)]">Strecke</dt><dd>${fmtNum(trip.distance_km, 2)} km</dd></div>
-          <div><dt class="text-[var(--color-on-surface-dim)]">Dauer</dt><dd>${fmtDuration(trip.duration_s)}</dd></div>
-          <div><dt class="text-[var(--color-on-surface-dim)]">Max.</dt><dd>${fmtNum(trip.max_speed_kmh, 1)} km/h</dd></div>
-          <div><dt class="text-[var(--color-on-surface-dim)]">Durch. Ø</dt><dd>${fmtNum(trip.avg_speed_kmh, 1)} km/h</dd></div>
-          <div><dt class="text-[var(--color-on-surface-dim)]">Energie</dt><dd>${fmtNum(trip.energy_wh, 1)} Wh</dd></div>
+          ${statHtml('route',      'Strecke',   `${fmtNum(trip.distance_km, 2)} km`)}
+          ${statHtml('clock',      'Dauer',     fmtDuration(trip.duration_s))}
+          ${statHtml('gauge',      'Max.',      `${fmtNum(trip.max_speed_kmh, 1)} km/h`)}
+          ${statHtml('trendingUp', 'Durch. Ø',  `${fmtNum(trip.avg_speed_kmh, 1)} km/h`)}
+          ${statHtml('zap',        'Energie',   `${fmtNum(trip.energy_wh, 1)} Wh`)}
         </dl>
         <div class="chart-host mt-4 hidden"></div>
       </article>
@@ -98,15 +128,23 @@
       width: host.clientWidth || 600,
       height: window.innerWidth < 640 ? 150 : 180,
       scales: { x: { time: true } },
-      legend: { show: false },
+      // Legende mit Live-Werten unter dem Cursor — Hover zeigt Zeit + km/h.
+      legend: { show: true, live: true },
       cursor: { drag: { x: true, y: false } },
       axes: [
         { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' }, values: EU_AXIS_VALUES },
         { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' } }
       ],
       series: [
-        { value: cursorValue },
-        { label: 'km/h', stroke: '#4DD0E1', width: 2, fill: '#4DD0E122', spanGaps: true }
+        { label: 'Zeit', value: cursorValue },
+        {
+          label: 'km/h',
+          stroke: '#4DD0E1',
+          width: 2,
+          fill: '#4DD0E122',
+          spanGaps: true,
+          value: (_self, v) => v == null ? '--' : `${v.toFixed(1)} km/h`,
+        }
       ]
     }, [xs, ys], host);
   }
