@@ -79,29 +79,79 @@ class ScooterManager(context: Context) : BleManager(context) {
 
     suspend fun connectTo(device: BluetoothDevice) {
         connect(device)
-            .retry(3, 200)
-            .useAutoConnect(true)
-            .timeout(15_000)
+            .retry(2, 200)
+            // useAutoConnect(true) silently waits in passive-scan mode for
+            // the device to advertise — sparing but slow (multiple seconds
+            // even when the device is right there). False uses an active
+            // direct connect attempt, which returns within ~1 s if the MAC
+            // is reachable and fails fast otherwise so we can scan-recover.
+            .useAutoConnect(false)
+            .timeout(6_000)
             .suspend()
     }
 
-    suspend fun sendControl(state: ControlState) {
-        val char = lowTx ?: return
-        writeCharacteristic(char, Data(ControlFrames.build(state)),
-            android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT).suspend()
+    /** Raw write to the low-TX char — used by both sendControl and the heartbeat. */
+    fun writeLowFrame(frame: ByteArray, label: String = "raw") {
+        val char = lowTx ?: run {
+            Log.w(tag, "writeLowFrame[$label]: lowTx is null (not connected?)")
+            return
+        }
+        Log.v(tag, "writeLowFrame[$label]: ${frame.toHex()}")
+        writeCharacteristic(
+            char, Data(frame),
+            android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE,
+        )
+            .fail { _, status -> Log.w(tag, "writeLowFrame[$label]: fail status=$status") }
+            .enqueue()
     }
 
-    suspend fun sendAt(payload: ByteArray) {
-        val char = highTx ?: return
-        writeCharacteristic(char, Data(payload),
-            android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT).suspend()
+    fun sendControl(state: ControlState) {
+        val char = lowTx ?: run {
+            Log.w(tag, "sendControl: lowTx is null (not connected?)")
+            return
+        }
+        val frame = ControlFrames.build(state)
+        Log.i(tag, "sendControl: ${frame.toHex()} state=$state")
+        // Fire-and-forget enqueue is the canonical Nordic pattern. The library
+        // serialises requests internally on its own thread, so two rapid UI
+        // toggles can't interleave. We don't use `.suspend()` because that
+        // returned-once-dispatched semantics turned out to wedge the queue
+        // for us when the scooter doesn't acknowledge the write.
+        writeCharacteristic(
+            char, Data(frame),
+            android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE,
+        )
+            .done { Log.d(tag, "sendControl: done") }
+            .fail { _, status -> Log.w(tag, "sendControl: fail status=$status") }
+            .enqueue()
     }
 
-    suspend fun authenticate(pin: String) = sendAt(AtCommands.verifyPin(pin))
-    suspend fun changePin(newPin: String) = sendAt(AtCommands.changePin(newPin))
+    fun sendAt(payload: ByteArray) {
+        val char = highTx ?: run {
+            Log.w(tag, "sendAt: highTx is null (not connected?)")
+            return
+        }
+        Log.i(tag, "sendAt: ${payload.toString(Charsets.US_ASCII)}")
+        writeCharacteristic(
+            char, Data(payload),
+            android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
+        )
+            .done { Log.d(tag, "sendAt: done") }
+            .fail { _, status -> Log.w(tag, "sendAt: fail status=$status") }
+            .enqueue()
+    }
 
-    fun disconnectAndRelease() {
+    fun authenticate(pin: String) = sendAt(AtCommands.verifyPin(pin))
+    fun changePin(newPin: String) = sendAt(AtCommands.changePin(newPin))
+
+    /**
+     * Tear down the live GATT connection but keep the BleManager instance
+     * reusable. `close()` would invalidate the manager — once called, the
+     * library refuses any further connect() and silently no-ops, which made
+     * "Trennen → Scan → Verbinden" a dead end. The manager is released for
+     * good only when the Application process dies.
+     */
+    fun requestDisconnect() {
         disconnect().enqueue()
-        close()
     }
 }

@@ -24,21 +24,52 @@ data class Telemetry(
     val controllerTempC: Int,
     val tripKm: Float,
     val totalKm: Float,
+    /**
+     * Status byte from offset [22]. Bit 5 (0x20) = parking lock engaged.
+     * Live-verified on Pulse Plus (HW_EF043840):
+     *   0x02 → unlocked / active
+     *   0x22 → parking lock engaged
+     * (Bit 7 was a red herring — appeared briefly during light-toggle
+     *  experiments but isn't the park indicator.)
+     */
+    val statusByte: Int,
     val rawHex: String,
 ) {
     val watts: Float get() = voltage * currentAmps
     val absWatts: Float get() = kotlin.math.abs(watts)
     val isRegenerating: Boolean get() = currentAmps < -0.05f
+    val parking: Boolean get() = (statusByte and 0x20) != 0
 }
 
 object TelemetryDecoder {
 
+    private const val TAG = "TelemetryDecoder"
+
     /** Returns null if [frame] is not a recognisable telemetry frame. */
     fun decode(frame: ByteArray): Telemetry? {
-        if (frame.size < 22) return null
+        if (frame.size < 22) {
+            android.util.Log.d(TAG, "skip: size=${frame.size} < 22 hex=${frame.toHex()}")
+            return null
+        }
         if (frame[0] != BleConstants.FRAME_HEADER_EPF &&
-            frame[0] != BleConstants.FRAME_HEADER_ALT) return null
-        if (!Crc16Modbus.verify(frame)) return null
+            frame[0] != BleConstants.FRAME_HEADER_ALT) {
+            android.util.Log.d(TAG, "skip: bad header=0x%02X".format(frame[0]))
+            return null
+        }
+        // Frame type 1 is the telemetry payload (per HCI sniff:
+        //   AF 00 19 01 ...). Type 0 is the "echo" of the last command and
+        //   carries no live values — decoding it as telemetry overwrites the
+        //   real values with zeros.
+        val isTelemetryType = frame.size >= 4 && frame[3].toInt() and 0xFF == 0x01
+        if (!isTelemetryType) {
+            android.util.Log.v(TAG, "skip: not type 1 (echo frame) hex=${frame.toHex()}")
+            return null
+        }
+        if (!Crc16Modbus.verify(frame)) {
+            // Be permissive: log but decode anyway. Pulse Plus may use a
+            // non-MODBUS checksum we haven't characterised yet.
+            android.util.Log.w(TAG, "CRC mismatch (decoding anyway) hex=${frame.toHex()}")
+        }
 
         fun u8(i: Int)  = frame[i].toInt() and 0xFF
         fun u16(i: Int) = (u8(i) shl 8) or u8(i + 1)
@@ -57,8 +88,14 @@ object TelemetryDecoder {
             controllerTempC = u8(14),
             tripKm = u16(16) * 0.1f,
             totalKm = u24(18) * 0.1f,
+            // 25-byte telemetry frames include a status byte at [22] before
+            // the CRC; shorter frames don't, fall back to 0.
+            statusByte = if (frame.size >= 25) u8(22) else 0,
             rawHex = frame.toHex(),
-        )
+        ).also { t ->
+            android.util.Log.v(TAG, "telemetry: status=0x%02X parking=%b gear=%d batt=%d%% v=%.1f"
+                .format(t.statusByte, t.parking, t.gear, t.batteryPercent, t.voltage))
+        }
     }
 }
 

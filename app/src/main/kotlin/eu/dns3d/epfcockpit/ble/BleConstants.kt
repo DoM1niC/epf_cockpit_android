@@ -28,6 +28,10 @@ object BleConstants {
 
     const val DEFAULT_PIN: String = "888888"
 
-    // Names the scooter typically advertises with
-    val ADVERTISED_NAME_PREFIXES = listOf("ePF", "EPF", "ePower", "ZYD")
+    // Names the scooter typically advertises with.
+    //   ePF / EPF / ePower → fully provisioned units running ZydDash
+    //   HW_                → Hobbywing default name (e.g. EPF Pulse Plus
+    //                        ships advertising "HW_<serial>")
+    //   ZYD                → Zydtech default
+    val ADVERTISED_NAME_PREFIXES = listOf("ePF", "EPF", "ePower", "ZYD", "HW_")
 }

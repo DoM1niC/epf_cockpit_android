@@ -64,10 +64,8 @@ class SettingsViewModel @Inject constructor(
 
     fun changePin(newPin: String) {
         if (newPin.length != 6 || newPin.any { !it.isDigit() }) return
-        viewModelScope.launch {
-            ble.changePin(newPin)
-            store.savePin(newPin)
-        }
+        ble.changePin(newPin)
+        viewModelScope.launch { store.savePin(newPin) }
     }
 
     fun forgetScooter() {

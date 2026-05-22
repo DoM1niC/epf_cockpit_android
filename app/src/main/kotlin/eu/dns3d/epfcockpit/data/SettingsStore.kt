@@ -31,6 +31,8 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val gear1MaxKmh: Int,
         val gear2MaxKmh: Int,
         val gear3MaxKmh: Int,
+        /** Last ride mode the user picked (true = Stand Stop, false = Kick Start). */
+        val rideModeStand: Boolean,
     )
 
     val flow: Flow<Snapshot> = context.dataStore.data.map { p ->
@@ -42,7 +44,12 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             gear1MaxKmh = p[KEY_G1] ?: 6,
             gear2MaxKmh = p[KEY_G2] ?: 15,
             gear3MaxKmh = p[KEY_G3] ?: 20,
+            rideModeStand = p[KEY_RIDE_MODE_STAND] ?: true,
         )
+    }
+
+    suspend fun setRideModeStand(stand: Boolean) {
+        context.dataStore.edit { p -> p[KEY_RIDE_MODE_STAND] = stand }
     }
 
     suspend fun rememberScooter(address: String, name: String?) {
@@ -86,5 +93,6 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val KEY_G1 = intPreferencesKey("gear1_max_kmh")
         val KEY_G2 = intPreferencesKey("gear2_max_kmh")
         val KEY_G3 = intPreferencesKey("gear3_max_kmh")
+        val KEY_RIDE_MODE_STAND = booleanPreferencesKey("ride_mode_stand")
     }
 }

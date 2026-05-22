@@ -1,5 +1,7 @@
 package eu.dns3d.epfcockpit.ui.dashboard
 
+import android.app.Activity
+import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,36 +17,43 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ElectricalServices
-import androidx.compose.material.icons.filled.Highlight
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.DirectionsRun
+import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Power
-import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconToggleButton
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import eu.dns3d.epfcockpit.ble.Telemetry
 import eu.dns3d.epfcockpit.ui.dashboard.components.BatteryRing
-import eu.dns3d.epfcockpit.ui.dashboard.components.GearSelector
 import eu.dns3d.epfcockpit.ui.dashboard.components.SpeedGauge
 import eu.dns3d.epfcockpit.ui.dashboard.components.StatTile
 
@@ -57,7 +66,17 @@ fun DashboardScreen(
     vm: DashboardViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val blinkertonOff by vm.blinkertonOff.collectAsStateWithLifecycle()
+    val controlsLocked by vm.controlsLocked.collectAsStateWithLifecycle()
     val telemetry = state.telemetry
+    val parking = state.parking
+
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val window = (view.context as Activity).window
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
 
     Scaffold(
         topBar = {
@@ -88,38 +107,30 @@ fun DashboardScreen(
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            val maxKmh = when (telemetry?.gear) {
-                1 -> state.gear1MaxKmh
-                3 -> state.gear3MaxKmh
-                else -> state.gear2MaxKmh
-            }.coerceAtLeast(6)
-
+            // Pulse-Plus advertises no programmable gear over BLE (the official
+            // app has no gear UI either), so we just scale to the bike's legal
+            // top speed of 20 km/h with a little headroom for spikes.
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 SpeedGauge(
                     speedKmh = telemetry?.speedKmh ?: 0f,
-                    maxSpeedKmh = maxKmh.toFloat(),
+                    maxSpeedKmh = 25f,
                     modifier = Modifier.fillMaxWidth(0.9f),
                 )
             }
 
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 BatteryRing(
                     percent = telemetry?.batteryPercent ?: 0,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(0.55f),
                 )
-                Column(Modifier.weight(1.4f)) {
-                    StatusRow(telemetry, state.control.locked, state.control.lightOn)
+            }
+            // Rekuperations-Chip nur sichtbar wenn aktiv — sitzt jetzt unter
+            // dem Akku-Ring, daher braucht's keine leere Spalte mehr daneben.
+            if (telemetry?.isRegenerating == true) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    StatusRow(telemetry)
                 }
             }
-
-            GearSelector(
-                current = state.control.gear,
-                onSelect = vm::setGear,
-            )
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 StatTile(
@@ -171,82 +182,130 @@ fun DashboardScreen(
                 )
             }
 
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                FilledTonalIconToggleButton(
-                    checked = state.control.lightOn,
-                    onCheckedChange = { vm.toggleLight() },
-                    modifier = Modifier.weight(1f).height(64.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                ) {
-                    Icon(Icons.Filled.Highlight, contentDescription = "Licht")
-                }
-                FilledTonalIconToggleButton(
-                    checked = state.control.locked,
-                    onCheckedChange = { vm.toggleLock() },
-                    modifier = Modifier.weight(1f).height(64.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                    colors = IconButtonDefaults.filledTonalIconToggleButtonColors(
-                        checkedContainerColor = MaterialTheme.colorScheme.errorContainer,
-                        checkedContentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    ),
-                ) {
-                    Icon(
-                        if (state.control.locked) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                        contentDescription = "Sperren",
-                    )
-                }
-                FilledTonalIconToggleButton(
-                    checked = false,
-                    onCheckedChange = { vm.resetTrip() },
-                    modifier = Modifier.weight(1f).height(64.dp),
-                    shape = MaterialTheme.shapes.extraLarge,
-                ) {
-                    Icon(Icons.Filled.RestartAlt, contentDescription = "Trip-Reset")
-                }
-            }
+            // Sniff-verified Pulse Plus controls
+            ControlSection(
+                parking = parking,
+                blinkertonOff = blinkertonOff,
+                rideMode = state.rideMode,
+                locked = controlsLocked,
+                onParkingToggle = vm::toggleParking,
+                onBlinkertonToggle = vm::toggleBlinkerton,
+                onRideModeChange = vm::setRideMode,
+            )
             Spacer(Modifier.height(8.dp))
         }
     }
 }
 
 @Composable
-private fun StatusRow(t: Telemetry?, locked: Boolean, lightOn: Boolean) {
+private fun ControlSection(
+    parking: Boolean,
+    blinkertonOff: Boolean?,
+    rideMode: RideMode,
+    locked: Boolean,
+    onParkingToggle: () -> Unit,
+    onBlinkertonToggle: () -> Unit,
+    onRideModeChange: (RideMode) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        AssistChip(
-            onClick = {},
-            label = { Text("Gang ${t?.gear ?: '-'}") },
-            leadingIcon = { Icon(Icons.Filled.Speed, contentDescription = null, modifier = Modifier.size(18.dp)) },
-            colors = AssistChipDefaults.assistChipColors(
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
-            ),
-        )
         if (locked) {
-            AssistChip(
-                onClick = {},
-                label = { Text("Gesperrt") },
-                leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                colors = AssistChipDefaults.assistChipColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    labelColor = MaterialTheme.colorScheme.onErrorContainer,
-                ),
+            // Lightweight hint why everything below is disabled. Sits at the
+            // top of the section so it's the first thing the rider sees if
+            // they reach for the controls mid-ride.
+            Text(
+                "Während der Fahrt gesperrt",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        if (lightOn) {
-            AssistChip(
-                onClick = {},
-                label = { Text("Licht an") },
-                leadingIcon = { Icon(Icons.Filled.Highlight, contentDescription = null, modifier = Modifier.size(18.dp)) },
+        SwitchRow(
+            icon = Icons.Filled.LocalParking,
+            label = "Parking",
+            checked = parking,
+            enabled = !locked,
+            onToggle = onParkingToggle,
+        )
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            SegmentedButton(
+                selected = rideMode == RideMode.Stand,
+                onClick = { onRideModeChange(RideMode.Stand) },
+                enabled = !locked,
+                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                icon = { Icon(Icons.Filled.PowerSettingsNew, contentDescription = null) },
+            ) { Text("Stand Stop") }
+            SegmentedButton(
+                selected = rideMode == RideMode.Kickstart,
+                onClick = { onRideModeChange(RideMode.Kickstart) },
+                enabled = !locked,
+                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                icon = { Icon(Icons.Filled.DirectionsRun, contentDescription = null) },
+            ) { Text("Kick Start") }
+        }
+        SwitchRow(
+            icon = if (blinkertonOff == true) Icons.Filled.NotificationsActive
+            else Icons.Filled.NotificationsOff,
+            label = "Blinkerton",
+            checked = blinkertonOff == true,
+            enabled = blinkertonOff != null && !locked,
+            onToggle = onBlinkertonToggle,
+        )
+    }
+}
+
+@Composable
+private fun SwitchRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onToggle: () -> Unit,
+) {
+    Card(
+        onClick = { if (enabled) onToggle() },
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 20.dp, vertical = 12.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.size(16.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+            )
+            Switch(
+                checked = checked,
+                // Toggling is owned by the Card's onClick — having BOTH
+                // the Card and the Switch react to taps causes onToggle()
+                // to fire twice on a single tap, which immediately reverts
+                // the new state.
+                onCheckedChange = null,
+                enabled = enabled,
             )
         }
+    }
+}
+
+@Composable
+private fun StatusRow(t: Telemetry?) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (t?.isRegenerating == true) {
             AssistChip(
                 onClick = {},
                 label = { Text("Rekuperation") },
-                leadingIcon = { Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                leadingIcon = {
+                    Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
+                },
                 colors = AssistChipDefaults.assistChipColors(
                     containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                     labelColor = MaterialTheme.colorScheme.onTertiaryContainer,

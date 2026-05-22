@@ -25,12 +25,22 @@ object Crc16Modbus {
         return frame + byteArrayOf(((crc ushr 8) and 0xFF).toByte(), (crc and 0xFF).toByte())
     }
 
+    /**
+     * Accepts both CRC byte orders:
+     *   - ePF-1 / Zydtech: big-endian (high byte first), per ZydDash docs
+     *   - EPF Pulse Plus / Hobbywing: little-endian (standard MODBUS RTU),
+     *     confirmed via HCI snoop of com.zydtech.epowerfun (e.g. payload
+     *     ending `0x14 96 A7` → CRC = 0xA796 in BE = 0x96A7 in LE).
+     * Trying both keeps us compatible with both firmware lineages.
+     */
     fun verify(frame: ByteArray): Boolean {
         if (frame.size < 3) return false
         val payloadEnd = frame.size - 2
         val expected = compute(frame, 0, payloadEnd)
-        val actual = ((frame[payloadEnd].toInt() and 0xFF) shl 8) or
-                (frame[payloadEnd + 1].toInt() and 0xFF)
-        return expected == actual
+        val hi = frame[payloadEnd].toInt() and 0xFF
+        val lo = frame[payloadEnd + 1].toInt() and 0xFF
+        val be = (hi shl 8) or lo
+        val le = (lo shl 8) or hi
+        return expected == be || expected == le
     }
 }

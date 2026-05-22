@@ -14,6 +14,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -46,15 +48,25 @@ fun SpeedGauge(
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxWidth().aspectRatio(1f)) {
-            val stroke = Stroke(width = size.minDimension * 0.10f, cap = StrokeCap.Round)
+            val strokeWidth = size.minDimension * 0.10f
+            val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+            // drawArc's stroke is centered on the arc path, so half the
+            // stroke would otherwise spill outside the Canvas (the arc rect
+            // defaults to the full Canvas). Inset by stroke/2 on every side
+            // so the rounded caps stay fully visible.
+            val inset = strokeWidth / 2f
             val arcSweep = 270f
             val startAngle = 135f
+            val topLeft = Offset(inset, inset)
+            val arcSize = Size(size.width - 2 * inset, size.height - 2 * inset)
             drawArc(
                 color = trackColor,
                 startAngle = startAngle,
                 sweepAngle = arcSweep,
                 useCenter = false,
                 style = stroke,
+                topLeft = topLeft,
+                size = arcSize,
             )
             drawArc(
                 brush = gradient,
@@ -62,6 +74,8 @@ fun SpeedGauge(
                 sweepAngle = arcSweep * animatedFraction,
                 useCenter = false,
                 style = stroke,
+                topLeft = topLeft,
+                size = arcSize,
             )
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {

@@ -49,9 +49,6 @@ fun SettingsScreen(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val pinStatus by vm.pinStatus.collectAsStateWithLifecycle()
-    var g1 by remember(state.gear1) { mutableStateOf(state.gear1.toFloat()) }
-    var g2 by remember(state.gear2) { mutableStateOf(state.gear2.toFloat()) }
-    var g3 by remember(state.gear3) { mutableStateOf(state.gear3.toFloat()) }
     var newPin by remember { mutableStateOf("") }
 
     Scaffold(
@@ -104,18 +101,6 @@ fun SettingsScreen(
                 }
             }
 
-            SectionCard("Max-Geschwindigkeit pro Gang") {
-                GearSlider("Gang 1", g1, 1f..25f) { g1 = it }
-                GearSlider("Gang 2", g2, 1f..25f) { g2 = it }
-                GearSlider("Gang 3", g3, 1f..25f) { g3 = it }
-                Spacer(Modifier.height(8.dp))
-                Button(
-                    onClick = { vm.setGears(g1.toInt(), g2.toInt(), g3.toInt()) },
-                    shape = MaterialTheme.shapes.large,
-                    modifier = Modifier.fillMaxWidth(),
-                ) { Text("Speichern") }
-            }
-
             SectionCard("PIN ändern") {
                 OutlinedTextField(
                     value = newPin,
@@ -150,32 +135,6 @@ fun SettingsScreen(
         }
     }
 
-    LaunchedEffect(Unit) { /* recompose-trigger only */ }
-}
-
-@Composable
-private fun GearSlider(
-    label: String,
-    value: Float,
-    range: ClosedFloatingPointRange<Float>,
-    onChange: (Float) -> Unit,
-) {
-    Column(Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Text(label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-            Text(
-                "${value.toInt()} km/h",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-        Slider(
-            value = value,
-            onValueChange = onChange,
-            valueRange = range,
-            steps = (range.endInclusive - range.start).toInt() - 1,
-        )
-    }
 }
 
 @Composable

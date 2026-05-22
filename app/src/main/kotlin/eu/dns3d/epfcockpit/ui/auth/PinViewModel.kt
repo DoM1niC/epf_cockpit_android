@@ -73,6 +73,6 @@ class PinViewModel @Inject constructor(
     fun submit() {
         if (_state.value.pin.length != 6) return
         _state.update { it.copy(submitting = true, rejected = false) }
-        viewModelScope.launch { ble.authenticate(_state.value.pin) }
+        ble.authenticate(_state.value.pin)
     }
 }
