@@ -9,6 +9,30 @@
   const WINDOW_MS = 5 * 60 * 1000; // 5 minutes
   const buf = { ts: [], speed: [], power: [] };
 
+  // uPlot Default-Werte sind US-locale (12h + M/D/YY). EU-Variante mit 24h-Zeit
+  // und Datum als DD.MM.YYYY. Format pro Tick-Increment-Level:
+  //   [step_seconds, default, year, null, month, null, day, null, mode]
+  // Tick-Default wird immer angezeigt; year/month/day-Slot wird auf der
+  // Grenze (Jahres-/Monats-/Tageswechsel) zusätzlich angehängt.
+  const EU_AXIS_VALUES = [
+    [3600 * 24 * 365, "{YYYY}",      null,                                 null, null,                             null, null,           null, 1],
+    [3600 * 24 * 28,  "{MMM}",       "\n{YYYY}",                           null, null,                             null, null,           null, 1],
+    [3600 * 24,       "{DD}.{MM}.",  "\n{YYYY}",                           null, null,                             null, null,           null, 1],
+    [3600,            "{HH}:{mm}",   "\n{DD}.{MM}.{YYYY}",                 null, "\n{DD}.{MM}.",                   null, null,           null, 1],
+    [60,              "{HH}:{mm}",   "\n{DD}.{MM}.{YYYY} {HH}:{mm}",       null, "\n{DD}.{MM}. {HH}:{mm}",         null, "\n{HH}:{mm}",  null, 1],
+    [1,               ":{ss}",       "\n{DD}.{MM}.{YYYY} {HH}:{mm}:{ss}",  null, "\n{DD}.{MM}. {HH}:{mm}:{ss}",    null, "\n{HH}:{mm}:{ss}", null, 1],
+    [0.001,           ":{ss}.{fff}", "\n{DD}.{MM}.{YYYY} {HH}:{mm}:{ss}",  null, "\n{DD}.{MM}. {HH}:{mm}:{ss}",    null, "\n{HH}:{mm}:{ss}", null, 1],
+  ];
+
+  // Cursor-Tooltip (Hover) — gleiches 24h/EU-Format wie Achsen.
+  const cursorTimeFmt = new Intl.DateTimeFormat('de-DE', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  });
+  function cursorValue(_self, rawValue) {
+    return rawValue == null ? '--' : cursorTimeFmt.format(new Date(rawValue * 1000));
+  }
+
   // ---------- DOM helpers ----------
   const $ = (id) => document.getElementById(id);
   const fmt = (v, digits = 0) =>
@@ -28,11 +52,11 @@
       legend: { show: false },
       cursor: { drag: { x: false, y: false } },
       axes: [
-        { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' } },
+        { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' }, values: EU_AXIS_VALUES },
         { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' } }
       ],
       series: [
-        {},
+        { value: cursorValue },
         {
           label,
           stroke: color,

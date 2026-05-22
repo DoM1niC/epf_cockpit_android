@@ -14,10 +14,30 @@
     hour: '2-digit', minute: '2-digit',
     hour12: false,
   });
+  const cursorTimeFmt = new Intl.DateTimeFormat('de-DE', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  });
   function fmtDate(ms) {
     if (!ms) return '--';
     return dateFmt.format(new Date(ms));
   }
+  function cursorValue(_self, rawValue) {
+    return rawValue == null ? '--' : cursorTimeFmt.format(new Date(rawValue * 1000));
+  }
+
+  // EU-Achsen-Werte für uPlot, siehe dashboard.js — kurze Duplikation hier
+  // statt zusätzlichem Shared-Script, damit history.html nicht noch eine
+  // <script>-Zeile braucht.
+  const EU_AXIS_VALUES = [
+    [3600 * 24 * 365, "{YYYY}",      null,                                 null, null,                             null, null,           null, 1],
+    [3600 * 24 * 28,  "{MMM}",       "\n{YYYY}",                           null, null,                             null, null,           null, 1],
+    [3600 * 24,       "{DD}.{MM}.",  "\n{YYYY}",                           null, null,                             null, null,           null, 1],
+    [3600,            "{HH}:{mm}",   "\n{DD}.{MM}.{YYYY}",                 null, "\n{DD}.{MM}.",                   null, null,           null, 1],
+    [60,              "{HH}:{mm}",   "\n{DD}.{MM}.{YYYY} {HH}:{mm}",       null, "\n{DD}.{MM}. {HH}:{mm}",         null, "\n{HH}:{mm}",  null, 1],
+    [1,               ":{ss}",       "\n{DD}.{MM}.{YYYY} {HH}:{mm}:{ss}",  null, "\n{DD}.{MM}. {HH}:{mm}:{ss}",    null, "\n{HH}:{mm}:{ss}", null, 1],
+    [0.001,           ":{ss}.{fff}", "\n{DD}.{MM}.{YYYY} {HH}:{mm}:{ss}",  null, "\n{DD}.{MM}. {HH}:{mm}:{ss}",    null, "\n{HH}:{mm}:{ss}", null, 1],
+  ];
 
   function fmtDuration(s) {
     if (s == null) return '--';
@@ -80,11 +100,11 @@
       legend: { show: false },
       cursor: { drag: { x: true, y: false } },
       axes: [
-        { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' } },
+        { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' }, values: EU_AXIS_VALUES },
         { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' } }
       ],
       series: [
-        {},
+        { value: cursorValue },
         { label: 'km/h', stroke: '#4DD0E1', width: 2, fill: '#4DD0E122', spanGaps: true }
       ]
     }, [xs, ys], host);
