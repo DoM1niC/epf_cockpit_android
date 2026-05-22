@@ -9,6 +9,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Foreground-Service hält BLE-GATT lebendig solange der Service läuft;
+         der Notification-Slot zeigt km/h + Akku. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
+    <!-- Damit das Cockpit auch bei längerer Standby-Zeit nicht vom Doze-Mode
+         eingefroren wird, bitten wir den User aktiv um Akku-Whitelist. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
 
     <application
@@ -34,5 +43,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Cockpit-Foreground-Service: hält BLE-Connection + zeigt Live-Notification.
+             foregroundServiceType=connectedDevice ist Pflicht ab API 34 für FGS,
+             die ein verbundenes Bluetooth-Gerät weiter bedienen. -->
+        <service
+            android:name=".service.EpfConnectionService"
+            android:foregroundServiceType="connectedDevice"
+            android:exported="false" />
     </application>
 </manifest>

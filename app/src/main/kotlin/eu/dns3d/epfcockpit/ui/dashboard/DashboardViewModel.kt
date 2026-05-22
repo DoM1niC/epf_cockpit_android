@@ -7,12 +7,9 @@ import eu.dns3d.epfcockpit.ble.BleRepository
 import eu.dns3d.epfcockpit.ble.ConnectionState
 import eu.dns3d.epfcockpit.ble.Telemetry
 import eu.dns3d.epfcockpit.data.SettingsStore
-import eu.dns3d.epfcockpit.data.TripDao
-import eu.dns3d.epfcockpit.data.TripRecorder
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -44,7 +41,6 @@ data class DashboardUiState(
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val ble: BleRepository,
-    private val tripDao: TripDao,
     private val settings: SettingsStore,
 ) : ViewModel() {
 
@@ -68,7 +64,6 @@ class DashboardViewModel @Inject constructor(
         .map { (it?.speedKmh ?: 0f) > 1.0f }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    private var recorder: TripRecorder? = null
     private var initialParkingSeeded = false
 
     init {
@@ -80,21 +75,19 @@ class DashboardViewModel @Inject constructor(
             _state.update { it.copy(rideMode = mode) }
         }
         viewModelScope.launch {
-            combine(ble.telemetry.filterNotNull(), ble.connection) { t, c -> t to c }
-                .collect { (telemetry, conn) ->
-                    _state.update {
-                        val parking = if (!initialParkingSeeded) {
-                            initialParkingSeeded = true
-                            telemetry.parking
-                        } else it.parking
-                        it.copy(telemetry = telemetry, parking = parking)
-                    }
-                    if (conn is ConnectionState.Connected) {
-                        val rec = recorder ?: TripRecorder(conn.address).also { recorder = it }
-                        rec.onSample(telemetry, System.currentTimeMillis())
-                    }
+            ble.telemetry.filterNotNull().collect { telemetry ->
+                _state.update {
+                    val parking = if (!initialParkingSeeded) {
+                        initialParkingSeeded = true
+                        telemetry.parking
+                    } else it.parking
+                    it.copy(telemetry = telemetry, parking = parking)
                 }
+            }
         }
+        // Trip-Recording wandert in TripCoordinator (@Singleton) — überlebt
+        // Screen-Navigation und FGS-Backgrounding. Diese VM kümmert sich nur
+        // um UI-State.
     }
 
     fun toggleParking() {
@@ -115,17 +108,8 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun disconnect() {
-        viewModelScope.launch {
-            recorder?.finalize()?.let { tripDao.insert(it) }
-            recorder = null
-            ble.disconnect()
-        }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        viewModelScope.launch {
-            recorder?.finalize()?.let { tripDao.insert(it) }
-        }
+        // TripCoordinator finalisiert + persistiert die Fahrt, sobald
+        // BleRepository.connection auf Disconnected umspringt.
+        ble.disconnect()
     }
 }

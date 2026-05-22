@@ -41,6 +41,9 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val streamingEnabled: Boolean,
         /** Shared-Token gegen [streamingUrl] (server-side INGEST_TOKEN). Null = ohne Auth. */
         val streamingToken: String?,
+        /** True wenn der User den Startup-Permissions-Dialog schonmal gesehen UND beide
+         *  Voraussetzungen erfüllt sind. Sonst wird er beim nächsten Start wieder angezeigt. */
+        val startupPromptDone: Boolean,
     )
 
     val flow: Flow<Snapshot> = context.dataStore.data.map { p ->
@@ -58,6 +61,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             streamingUrl = p[KEY_STREAMING_URL]?.takeIf { it.isNotBlank() },
             streamingEnabled = p[KEY_STREAMING_ENABLED] ?: false,
             streamingToken = p[KEY_STREAMING_TOKEN]?.takeIf { it.isNotBlank() },
+            startupPromptDone = p[KEY_STARTUP_PROMPT_DONE] ?: false,
         )
     }
 
@@ -120,6 +124,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         }
     }
 
+    suspend fun setStartupPromptDone(done: Boolean) {
+        context.dataStore.edit { p -> p[KEY_STARTUP_PROMPT_DONE] = done }
+    }
+
     private companion object {
         val KEY_ADDRESS = stringPreferencesKey("scooter_address")
         val KEY_NAME = stringPreferencesKey("scooter_name")
@@ -133,5 +141,6 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val KEY_STREAMING_URL = stringPreferencesKey("streaming_url")
         val KEY_STREAMING_ENABLED = booleanPreferencesKey("streaming_enabled")
         val KEY_STREAMING_TOKEN = stringPreferencesKey("streaming_token")
+        val KEY_STARTUP_PROMPT_DONE = booleanPreferencesKey("startup_prompt_done")
     }
 }

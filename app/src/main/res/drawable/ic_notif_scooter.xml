@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Status-Bar-Notification-Icon: weiße Silhouette auf Transparent (Android-Spec).
+  Material-Konvention: 24dp, einfache Form, kein Detail-Rauschen.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Räder -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M6,18 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z M6,18 m-1,0 a1,1 0 1,1 2,0 a1,1 0 1,1 -2,0 z M18,18 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 z M18,18 m-1,0 a1,1 0 1,1 2,0 a1,1 0 1,1 -2,0 z"/>
+    <!-- Deck -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4,14 L20,14 L20,16 L4,16 Z"/>
+    <!-- Stem -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M18,14 L20,14 L16,4 L14,4 Z"/>
+    <!-- Lenker -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10,4 L18,4 L18,6 L10,6 Z"/>
+</vector>
