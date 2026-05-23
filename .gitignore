@@ -20,5 +20,8 @@ build/
 *.keystore
 keystore.properties
 
+# BLE sniff artifacts (Android bugreports, btsnoop dumps, decoder scripts) — local-only
+.sniff/
+
 # Wrapper jar — bootstrapped via `gradle wrapper` locally; CI uses actions/setup-java
 # gradle/wrapper/gradle-wrapper.jar  # ← keep this NOT ignored once you've bootstrapped

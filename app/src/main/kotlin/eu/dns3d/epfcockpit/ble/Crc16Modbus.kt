@@ -19,10 +19,23 @@ object Crc16Modbus {
         return crc and 0xFFFF
     }
 
-    /** Append CRC as big-endian (high byte, then low byte). */
+    /**
+     * Append CRC as big-endian (high byte, then low byte) — für ePF-1 / Zydtech
+     * (ZydDash convention).
+     */
     fun append(frame: ByteArray): ByteArray {
         val crc = compute(frame)
         return frame + byteArrayOf(((crc ushr 8) and 0xFF).toByte(), (crc and 0xFF).toByte())
+    }
+
+    /**
+     * Append CRC as little-endian (low byte, then high byte) — für EPF Pulse Plus
+     * / Hobbywing. Sniff-verifiziert: die original EPF-App schickt CRC LE auf wire,
+     * der Hobbywing-Controller verwirft Frames mit BE-CRC stumm.
+     */
+    fun appendLE(frame: ByteArray): ByteArray {
+        val crc = compute(frame)
+        return frame + byteArrayOf((crc and 0xFF).toByte(), ((crc ushr 8) and 0xFF).toByte())
     }
 
     /**

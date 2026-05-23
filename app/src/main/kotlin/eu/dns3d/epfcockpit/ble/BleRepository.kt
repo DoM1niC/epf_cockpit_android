@@ -81,7 +81,22 @@ class BleRepository @Inject constructor(
     private val _voiceOff = MutableStateFlow<Boolean?>(null)
     val voiceOff: StateFlow<Boolean?> = _voiceOff.asStateFlow()
 
+    /**
+     * Live-Cache der User-Max-Speed aus den Settings. Wird in JEDES `0xAF`-
+     * Statusframe geschrieben (parking/mode/setMaxSpeed), damit ein Park-Toggle
+     * den g3-Wert nicht zurück auf 20 km/h zwingt.
+     */
+    @Volatile private var cachedMaxSpeedKmh: Int = 20
+
     init {
+        // Settings → Cache spiegeln, damit Frame-Builder synchron lesen können
+        // ohne Coroutine-Hop. Erste Emission liefert auch sofort den Persistenz-
+        // Default (20 km/h), bevor irgendein Frame ausgeht.
+        scope.launch {
+            settings.flow.collect { snap ->
+                cachedMaxSpeedKmh = snap.gear3MaxKmh.coerceIn(1, 40)
+            }
+        }
         // Connection-Lifecycle vom Nordic-Manager beobachten — sonst bleibt
         // _connection auf "Connected" hängen wenn der Scooter ausgeht oder
         // außer Reichweite fährt, weil der suspend connect() längst returnt
@@ -105,6 +120,30 @@ class BleRepository @Inject constructor(
                         _connection.value = ConnectionState.Failed(
                             friendlyDisconnectReason(event.reason)
                         )
+                    }
+                }
+            }
+        }
+        // Roller schickt regelmäßig Echo-Frames `AF 01 19 00 <g1> <g2> <g3> 00…`
+        // mit seinen aktuell gespeicherten Gear-Limits. Die nutzen wir als
+        // Source-of-Truth für unseren Cache — verhindert dass ein veralteter
+        // DataStore-Wert (z.B. nach versehentlichem Apply auf 5 km/h, oder
+        // wenn der User in der EPF-App den Wert geändert hat während wir
+        // disconnected waren) bei jedem Park/Mode-Toggle reingeschickt wird.
+        scope.launch {
+            manager.rawFrames.collect { frame ->
+                // Echo-Frame-Identifikation:
+                //   byte[0] = 0xAF, byte[1] = 0x01, byte[3] = 0x00
+                if (frame.size >= 7
+                    && frame[0] == BleConstants.FRAME_HEADER_EPF
+                    && (frame[1].toInt() and 0xFF) == 0x01
+                    && (frame[3].toInt() and 0xFF) == 0x00
+                ) {
+                    val scooterG3 = frame[6].toInt() and 0xFF
+                    if (scooterG3 in 1..40 && scooterG3 != cachedMaxSpeedKmh) {
+                        Log.i(TAG, "echo-sync: scooter g3=$scooterG3 (was cached=$cachedMaxSpeedKmh)")
+                        cachedMaxSpeedKmh = scooterG3
+                        scope.launch { settings.setGearLimits(g1 = 6, g2 = 15, g3 = scooterG3) }
                     }
                 }
             }
@@ -415,9 +454,14 @@ class BleRepository @Inject constructor(
     }
 
     // === High-level Pulse Plus controls (sniff-verified) ===
+    // Frame g3 = cachedMaxSpeedKmh (vom Echo-Sync gepflegt) — der Controller
+    // bekommt bei jedem Park/Mode-Toggle den aktuellen User-Max-Speed mit,
+    // damit der nicht durch das nächste Toggle wieder auf einen alten Wert
+    // resettet wird.
 
     fun setParking(on: Boolean) {
-        val frame = if (on) ControlFrames.PARKING_ON else ControlFrames.PARKING_OFF
+        val g3 = cachedMaxSpeedKmh
+        val frame = if (on) ControlFrames.parkingOn(g3) else ControlFrames.parkingOff(g3)
         manager.writeLowFrame(frame, label = if (on) "park-on" else "park-off")
     }
 
@@ -429,8 +473,28 @@ class BleRepository @Inject constructor(
      * same frames for both — switching modes also flips the park state.
      */
     fun setRideMode(stand: Boolean) {
-        val frame = if (stand) ControlFrames.MODE_STAND_STOP else ControlFrames.MODE_KICK_START
+        val g3 = cachedMaxSpeedKmh
+        val frame = if (stand) ControlFrames.modeStandStop(g3) else ControlFrames.modeKickStart(g3)
         manager.writeLowFrame(frame, label = if (stand) "mode-stand" else "mode-kick")
+    }
+
+    /**
+     * Setzt die Max-Geschwindigkeit (byte [7] = g3) durch ein Stand-Stop-Frame
+     * mit dem neuen Wert — mirror dem Verhalten der offiziellen EPF-App, die
+     * beim Slider-Move ebenfalls Park+Stand sendet (Sniff #3 bestätigt). Der
+     * neue Wert wird persistiert und in den Cache geschrieben, sodass das
+     * nächste Park-/Mode-Frame ihn weiter trägt.
+     *
+     * Caller-Pflicht: nur aufrufen wenn der Roller geparkt (oder steht) ist —
+     * sonst wechselt der Roller mid-ride in Stand-Stop, das ist kein guter
+     * Tag. Die Settings-UI disabled den Button entsprechend.
+     */
+    fun setMaxSpeed(kmh: Int) {
+        val clamped = kmh.coerceIn(1, 40)
+        cachedMaxSpeedKmh = clamped
+        val frame = ControlFrames.modeStandStop(clamped)
+        manager.writeLowFrame(frame, label = "set-maxspeed-$clamped")
+        scope.launch { settings.setGearLimits(g1 = 6, g2 = 15, g3 = clamped) }
     }
 
     fun setBlinkerton(on: Boolean) = manager.sendAt(AtCommands.setVoiceOff(on))

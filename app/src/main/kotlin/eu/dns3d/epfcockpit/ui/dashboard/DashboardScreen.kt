@@ -17,16 +17,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.ElectricalServices
 import androidx.compose.material.icons.filled.DirectionsRun
+import androidx.compose.material.icons.filled.ElectricalServices
 import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
-import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material3.AssistChip
@@ -90,10 +91,10 @@ fun DashboardScreen(
                         Icon(Icons.Filled.Route, contentDescription = "Fahrten")
                     }
                     IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.ElectricalServices, contentDescription = "Einstellungen")
+                        Icon(Icons.Filled.Settings, contentDescription = "Einstellungen")
                     }
                     IconButton(onClick = { vm.disconnect(); onDisconnect() }) {
-                        Icon(Icons.Filled.Power, contentDescription = "Trennen")
+                        Icon(Icons.Filled.Bluetooth, contentDescription = "Trennen / BT-Suche")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

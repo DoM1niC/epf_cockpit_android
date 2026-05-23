@@ -90,9 +90,12 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
 
     suspend fun setGearLimits(g1: Int, g2: Int, g3: Int) {
         context.dataStore.edit { p ->
-            p[KEY_G1] = g1.coerceIn(1, 25)
-            p[KEY_G2] = g2.coerceIn(1, 25)
-            p[KEY_G3] = g3.coerceIn(1, 25)
+            p[KEY_G1] = g1.coerceIn(1, 30)
+            p[KEY_G2] = g2.coerceIn(1, 30)
+            // g3 bekommt 30 Cap (statt 25) — wir wollen Slider bis 30 km/h
+            // erlauben um zu sehen ob der Controller den experimentellen
+            // Headroom annimmt (Hersteller-Default ist 20).
+            p[KEY_G3] = g3.coerceIn(1, 30)
         }
     }
 

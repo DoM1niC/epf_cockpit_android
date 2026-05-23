@@ -54,47 +54,61 @@ object ControlFrames {
 
     // === Discrete control frames captured from the official app ===
     //
-    // Pulse Plus uses an OP-byte encoding (high nibble = action, low nibble =
-    // bit-flag on/off). All carry the canonical suffix `… 06 0F 14 <CRC_LE>`.
+    // Pulse Plus uses a flags byte where:
+    //   bit 7 = ride mode  (set = Stand-Stop, clear = Kick-Start)
+    //   bit 5 = park       (set = parked,   clear = active)
+    //   bits 1..0 = gear   (always observed as 2 in sniffs)
     //
-    // Frames captured in sniff #2 — confirmed live on a Pulse Plus:
-    //   OP 0x82 → Parking OFF / Unlock (scooter active)
-    //   OP 0x22 → Parking ON  / Lock   (scooter parked)
+    // Sniff-verified flag combinations:
+    //   0x82  =  Active + Stand   → "Parking OFF" / "Mode Kick" (official app
+    //                                reuses this single frame for both actions)
+    //   0x22  =  Parked + Kick    → "Parking ON"
+    //   0xA2  =  Parked + Stand   → "Mode Stand-Stop" (also what the EPF app
+    //                                sends when the user changes the speed slider)
     //
-    // Mode (Stand ↔ Kickstart) frames were NOT captured in sniff #2 — the
-    // two AF writes both happened to be Parking toggles. Needs another sniff
-    // with only the Mode buttons being pressed.
+    // All frames carry the canonical payload tail `… 06 0F <g3> <CRC-LE>`
+    // where g3 is the gear-3 max km/h. The official app hardcodes 0x14 = 20 km/h,
+    // but the controller accepts higher values byte-for-byte (sniff #3 observed
+    // g3 = 0x16 = 22 km/h being sent by the original app when its slider sits at
+    // its top notch — i.e. the EPF app adds its own +2 tolerance offset over
+    // the displayed value, the controller just gets the raw byte).
+    //
+    // We expose builder functions instead of static byte arrays so the user's
+    // saved max-speed survives a park/unpark or mode toggle — otherwise every
+    // toggle would reset g3 back to 20.
 
-    /** Parking OFF — unlock the scooter from P-mode. */
-    val PARKING_OFF: ByteArray = byteArrayOf(
-        0xAF.toByte(), 0x00, 0x0A, 0x82.toByte(), 0x00,
-        0x06, 0x0F, 0x14, 0x97.toByte(), 0x79,
-    )
+    private const val PULSE_GEAR1_KMH: Byte = 6
+    private const val PULSE_GEAR2_KMH: Byte = 15
+
+    /**
+     * Builds a Pulse-Plus state frame: `AF 00 0A <flags> 00 06 0F <g3> <CRC-LE>`.
+     * Range-checks g3 to 1..40 — controller will likely clamp anything silly,
+     * but we don't want to send 0 (would mean "stop dead") or negative bytes.
+     *
+     * Verwendet [Crc16Modbus.appendLE] — Pulse Plus erwartet CRC little-endian.
+     * Mit BE-CRC (wie ZydDash/`append`) verwirft der Hobbywing-Controller die
+     * Frames stumm; Telemetry-statusByte bleibt konstant, Park/Mode/Speed tut nix.
+     */
+    private fun pulseFrame(flags: Byte, g3MaxKmh: Int): ByteArray {
+        require(g3MaxKmh in 1..40) { "g3MaxKmh out of range: $g3MaxKmh" }
+        val payload = byteArrayOf(
+            BleConstants.FRAME_HEADER_EPF, 0x00, 0x0A, flags, 0x00,
+            PULSE_GEAR1_KMH, PULSE_GEAR2_KMH, g3MaxKmh.toByte(),
+        )
+        return Crc16Modbus.appendLE(payload)
+    }
+
+    /** Parking OFF — unlock the scooter from P-mode (also = Mode Kick-Start). */
+    fun parkingOff(g3MaxKmh: Int = 20): ByteArray = pulseFrame(0x82.toByte(), g3MaxKmh)
 
     /** Parking ON — engage the park lock. */
-    val PARKING_ON: ByteArray = byteArrayOf(
-        0xAF.toByte(), 0x00, 0x0A, 0x22, 0x00,
-        0x06, 0x0F, 0x14, 0x17, 0x60,
-    )
+    fun parkingOn(g3MaxKmh: Int = 20): ByteArray = pulseFrame(0x22.toByte(), g3MaxKmh)
 
-    /**
-     * Ride mode "Stand Stop" — scooter parks and waits in stand mode
-     * (must be physically pushed to start). Sniff-verified bit pattern:
-     * Bit 7 (mode) + Bit 5 (park) + Bit 1.
-     */
-    val MODE_STAND_STOP: ByteArray = byteArrayOf(
-        0xAF.toByte(), 0x00, 0x0A, 0xA2.toByte(), 0x00,
-        0x06, 0x0F, 0x14, 0x16, 0xBE.toByte(),
-    )
+    /** Ride mode Stand-Stop — parks AND switches to stand mode in one frame. */
+    fun modeStandStop(g3MaxKmh: Int = 20): ByteArray = pulseFrame(0xA2.toByte(), g3MaxKmh)
 
-    /**
-     * Ride mode "Kick Start" — scooter unparks and starts in kickstart mode
-     * (goes on throttle alone after a brief push). Byte-identical to
-     * [PARKING_OFF] — the official app reuses the same frame for both
-     * "Park OFF" and "Kick Start" actions, which simultaneously unparks the
-     * scooter and switches the ride mode.
-     */
-    val MODE_KICK_START: ByteArray = PARKING_OFF
+    /** Ride mode Kick-Start — byte-identical to [parkingOff] (unparks + kick mode). */
+    fun modeKickStart(g3MaxKmh: Int = 20): ByteArray = parkingOff(g3MaxKmh)
 
     fun build(state: ControlState): ByteArray {
         var flags = (state.gear and 0x03)

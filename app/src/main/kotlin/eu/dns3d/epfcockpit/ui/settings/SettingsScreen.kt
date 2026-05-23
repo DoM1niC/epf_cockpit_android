@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -36,6 +37,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -56,6 +60,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import eu.dns3d.epfcockpit.data.ThemeMode
 import eu.dns3d.epfcockpit.streaming.TelemetryStreamer
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -237,6 +242,15 @@ fun SettingsScreen(
                 )
             }
 
+            SectionCard("Max-Geschwindigkeit", leadingIcon = Icons.Filled.Speed) {
+                MaxSpeedSection(
+                    savedKmh = state.gear3,
+                    authenticated = state.authenticated,
+                    parking = state.parking,
+                    onApply = vm::setMaxSpeed,
+                )
+            }
+
             SectionCard("PIN ändern") {
                 OutlinedTextField(
                     value = newPin,
@@ -273,6 +287,97 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(20.dp))
         }
+    }
+}
+
+@Composable
+private fun MaxSpeedSection(
+    savedKmh: Int,
+    authenticated: Boolean,
+    parking: Boolean,
+    onApply: (Int) -> Unit,
+) {
+    // Slider-Draft hängt am gespeicherten Wert — wenn der sich nach einem
+    // erfolgreichen Apply ändert, snapped der Slider mit. remember(savedKmh)
+    // re-initialisiert das State-Object bei jedem savedKmh-Update.
+    var sliderDraft by remember(savedKmh) { mutableStateOf(savedKmh.toFloat()) }
+    // roundToInt statt toInt: M3-Slider snapt intern auf Float-Werte mit
+    // leichten Rundungsfehlern (21.999... → toInt = 21). Mit roundToInt
+    // treffen wir jede Integer-Stufe sauber.
+    val draftKmh = sliderDraft.roundToInt().coerceIn(1, 30)
+    val isExperimental = draftKmh > 20
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Aktuell gespeichert",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text("$savedKmh km/h", style = MaterialTheme.typography.titleLarge)
+        }
+        if (isExperimental) {
+            Surface(
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+            ) {
+                Text(
+                    "EXPERIMENTELL",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(12.dp))
+    Text(
+        "Neu: $draftKmh km/h",
+        style = MaterialTheme.typography.titleMedium,
+        color = if (isExperimental) MaterialTheme.colorScheme.tertiary
+                else MaterialTheme.colorScheme.primary,
+    )
+    Slider(
+        value = sliderDraft,
+        onValueChange = { sliderDraft = it },
+        valueRange = 1f..30f,
+        steps = 28, // (30 - 1 - 1) = 28 Zwischenstops → 1 km/h-Granularität
+        colors = if (isExperimental) SliderDefaults.colors(
+            thumbColor = MaterialTheme.colorScheme.tertiary,
+            activeTrackColor = MaterialTheme.colorScheme.tertiary,
+        ) else SliderDefaults.colors(),
+    )
+    Row(modifier = Modifier.fillMaxWidth()) {
+        Text("1 km/h", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.weight(1f))
+        Text("30 km/h", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Spacer(Modifier.height(12.dp))
+    val canApply = authenticated && parking && draftKmh != savedKmh
+    Button(
+        onClick = { onApply(draftKmh) },
+        enabled = canApply,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("An Roller senden") }
+    val hint = when {
+        !authenticated -> "Nicht verbunden — verbinde dich zuerst über das Dashboard"
+        !parking -> "Roller muss geparkt sein (P-Modus aktiv), bevor du sendest"
+        draftKmh == savedKmh -> "Wähle einen anderen Wert als $savedKmh km/h"
+        isExperimental -> "Über 20 km/h ist experimentell — Hersteller-Limit überschritten, Controller kann den Wert ablehnen oder clampen."
+        else -> null
+    }
+    if (hint != null) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            hint,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (isExperimental && hint.startsWith("Über"))
+                MaterialTheme.colorScheme.tertiary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
