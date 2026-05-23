@@ -173,6 +173,9 @@
     { id: 'month',  label: 'Diesen Monat',range: () => monthRange(0) },
     { id: 'year',   label: 'Dieses Jahr', range: () => yearRange(0) },
     { id: 'all',    label: 'Alle',        range: () => null },
+    // Pseudo-Chip — eigentliche Range wird beim Apply als synthesizedCustom
+    // gesetzt. Klick toggelt nur das Eingabe-Panel, ohne sofort zu laden.
+    { id: 'custom', label: 'Eigener Zeitraum', range: () => null, isCustomToggle: true },
   ];
   let activeFilter = FILTERS[2]; // Default: 30 Tage
 
@@ -213,12 +216,107 @@
     host.querySelectorAll('.filter-chip').forEach(btn => {
       btn.addEventListener('click', () => {
         const next = FILTERS.find(f => f.id === btn.dataset.filter);
-        if (!next || next.id === activeFilter.id) return;
+        if (!next) return;
+        if (next.isCustomToggle) {
+          // Panel sichtbar machen / togglen, ohne sofort zu laden.
+          toggleCustomPanel();
+          return;
+        }
+        if (next.id === activeFilter.id) return;
         activeFilter = next;
+        hideCustomPanel();
         renderChips();
         load();
       });
     });
+  }
+
+  // ---------- Eigener Zeitraum (Custom Range) ----------
+  // Date-Inputs liefern "YYYY-MM-DD" in lokaler Zone — wir bauen daraus mit
+  // new Date(y, m-1, d) lokale Mitternacht, damit Tagesgrenzen identisch zu
+  // dayRange()/monthRange() sind und nicht durch UTC-Offset verrutschen.
+  function parseDateInput(value) {
+    if (!value) return null;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!m) return null;
+    return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
+  }
+  function toggleCustomPanel() {
+    const panel = document.getElementById('custom-range-panel');
+    if (!panel) return;
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) {
+      // Defaults: Wenn schon ein Custom-Filter aktiv ist, dessen Werte zeigen;
+      // sonst die heutige Range vorausfüllen, damit der User nur ein Datum
+      // antippen muss.
+      const from = document.getElementById('custom-range-from');
+      const to = document.getElementById('custom-range-to');
+      if (activeFilter.id === 'custom' && activeFilter._fromIso && activeFilter._toIso) {
+        from.value = activeFilter._fromIso;
+        to.value = activeFilter._toIso;
+      } else {
+        const today = isoFromMs(Date.now());
+        if (!from.value) from.value = today;
+        if (!to.value) to.value = today;
+      }
+      from.focus();
+    }
+  }
+  function hideCustomPanel() {
+    const panel = document.getElementById('custom-range-panel');
+    if (panel) panel.classList.add('hidden');
+    const err = document.getElementById('custom-range-error');
+    if (err) err.classList.add('hidden');
+  }
+  function isoFromMs(ms) {
+    const d = new Date(ms);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+  function bindCustomPanel() {
+    const apply = document.getElementById('custom-range-apply');
+    if (!apply) return;
+    apply.addEventListener('click', () => {
+      const fromEl = document.getElementById('custom-range-from');
+      const toEl = document.getElementById('custom-range-to');
+      const err = document.getElementById('custom-range-error');
+      const fromMs = parseDateInput(fromEl.value);
+      const toMs = parseDateInput(toEl.value);
+      if (fromMs == null || toMs == null || fromMs > toMs) {
+        err.classList.remove('hidden');
+        return;
+      }
+      err.classList.add('hidden');
+      // "Bis" inklusiv: exklusive Obergrenze ist Tag+1 um 00:00.
+      const toExclusive = toMs + 86_400_000;
+      // Label: Einzeltag kompakt, sonst "dd.mm.yyyy – dd.mm.yyyy".
+      const label = fromMs === toMs
+        ? `Eigener Zeitraum: ${formatLabelDate(fromMs)}`
+        : `Eigener Zeitraum: ${formatLabelDate(fromMs)} – ${formatLabelDate(toMs)}`;
+      // FILTERS-Eintrag in-place mutieren, damit renderChips() den neuen Label
+      // sieht und der Chip aktiv bleibt.
+      const customEntry = FILTERS.find(f => f.id === 'custom');
+      customEntry.label = label;
+      customEntry.range = () => [fromMs, toExclusive];
+      customEntry._fromIso = fromEl.value;
+      customEntry._toIso = toEl.value;
+      activeFilter = customEntry;
+      hideCustomPanel();
+      renderChips();
+      load();
+    });
+    // Enter in einem Input löst Apply aus — UX-Polish für Desktop-User.
+    ['custom-range-from', 'custom-range-to'].forEach(id => {
+      document.getElementById(id).addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); apply.click(); }
+      });
+    });
+  }
+  const labelDateFmt = new Intl.DateTimeFormat('de-DE', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+  });
+  function formatLabelDate(ms) {
+    return labelDateFmt.format(new Date(ms));
   }
 
   function setStatus(text) {
@@ -271,5 +369,6 @@
   }
 
   renderChips();
+  bindCustomPanel();
   load();
 })();

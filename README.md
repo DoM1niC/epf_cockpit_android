@@ -21,6 +21,16 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
   App-Neustart
 - **Blinkerton** ein/aus — Sprach-/Ton-Hinweise, Status wird live vom Scooter
   gelesen
+- **Max-Geschwindigkeit** — Slider 1..30 km/h in den Settings, schickt einen
+  `AF`-Stand-Stop-Frame mit dem neuen `g3`-Wert an den Controller. Apply-Button
+  ist nur bei aktiver Verbindung + P-Modus enabled. **Echo-Sync**: der Roller
+  spiegelt seinen aktuellen `g3` im Echo-Frame zurück, App synct davon → keine
+  Drift wenn die offizielle EPF-App parallel den Wert ändert. Ab 21 km/h zeigt
+  der Slider eine orange "EXPERIMENTELL"-Markierung — der Hobbywing-Controller
+  cappt aktuell bei 22 km/h, höhere Werte landen byteweise korrekt am
+  Controller, werden aber clamped (live verifiziert: Echo zeigt 22 nach
+  Anfrage 23). Frames mit CRC little-endian (Hobbywing-Konvention, weicht
+  von ZydDash big-endian ab — kostete ein paar Stunden Debugging).
 
 ### Verbindung
 - BLE-Scan mit Filter auf `HW_*` / `ePF*` / `EPF*` / `ZYD*`, sortiert nach RSSI
@@ -60,9 +70,33 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
 - Optional pusht die App Telemetry per WebSocket an einen kleinen Node-Server
   (siehe [`web/`](web/)) — daraus entstehen drei Browser-Views:
   Live-Dashboard mit Charts, OBS-Studio-Widget (transparent) und Trip-Historie.
-- Shared-Token-Auth: `INGEST_TOKEN` (App→Server) + `VIEW_TOKEN` (Server→Browser),
-  beide optional, konstant-zeitig verglichen. Token in der App wird als
+- **Live-Dashboard** (`/`): Tile-Grid (Speed/Akku/Leistung/Spannung/Strom/
+  Controller) mit Lucide-Style SVG-Icons + zwei uPlot-Charts (Geschwindigkeit
+  + Leistung). Charts haben Hover-Tooltips mit Zeit + Wert am Cursor-Punkt
+  und einen Zeitraum-Selector (Live 5m / 15m / 1h / 6h / 24h / 7d) der
+  zwischen Live-Buffer und Server-Range-Query (mit Bucket-Downsampling)
+  switcht.
+- **Trip-History** (`/history`): expandierbare Karten je Fahrt mit
+  Strecke / Dauer / Max / Ø-Speed / Energie und uPlot-Speed-Chart on-Demand.
+  Zeitraum-Chips (Heute / 7 Tage / 30 Tage / Diesen Monat / Dieses Jahr /
+  Alle) plus **Eigener Zeitraum** mit Date-Picker (Einzeltag oder Range
+  Von–Bis). Aggregat-Stats (Anzahl · km · Fahrzeit · Energie) für den
+  aktiven Filter werden live ausgerechnet und in der Filter-Leiste angezeigt.
+- **OBS-Widget** (`/obs`): minimales transparentes Overlay mit Speed / Akku /
+  Watt für Streaming-Captures (`?theme=…&accent=…&compact=…`-Query-Params).
+- **Sprache**: Komplett auf Deutsch übersetzt inkl. korrekter Umlaute, EU-
+  Datum (`22.05.2026`) + 24h-Zeit überall (auch in den Chart-Achsen).
+- **Backfill**: Bei jedem Reconnect schickt die App alle in Room gespeicherten
+  Trips per `trip_end`-Event mit deterministischer ID `local-<rowId>` an den
+  Server. Idempotent dank `INSERT OR IGNORE`, also Mehrfach-Sends OK.
+- **Shared-Token-Auth**: `INGEST_TOKEN` (App→Server) + `VIEW_TOKEN`
+  (Server→Browser), beide optional, konstant-zeitig verglichen
+  (`crypto.timingSafeEqual`). Token in der App wird als
   `Authorization: Bearer …` übertragen, landet nicht in Server-Logs.
+- **Cache-Strategie**: eigene Assets (`/dist`, `/css`, `/js`) → ETag-
+  Revalidation ohne `max-age`, HTML → `no-cache, must-revalidate`, Vendor
+  (uPlot) → 7d immutable. Damit landen `npm run build`-Updates sofort
+  beim nächsten Reload, kein Ctrl+F5 nötig.
 - Server-URL + Token + Enable-Switch in den App-Settings.
 - Produktion: nginx-Reverse-Proxy + gehärteter systemd-Service, fertige
   Configs unter [`web/deploy/`](web/deploy/).
@@ -150,18 +184,23 @@ Release-Build mit dem Debug-Key signiert.
 
 ## Permissions
 
-| Permission                            | Zweck                                  |
-|---------------------------------------|----------------------------------------|
-| `BLUETOOTH_SCAN` (`neverForLocation`) | BLE-Scan ohne Location-Pflicht         |
-| `BLUETOOTH_CONNECT`                   | GATT-Connect, Notify-Subscriptions     |
-| `POST_NOTIFICATIONS` (Android 13+)    | (Reserviert für künftige Foreground-Service-Notifications) |
+| Permission                                  | Zweck                                        |
+|---------------------------------------------|----------------------------------------------|
+| `BLUETOOTH_SCAN` (`neverForLocation`)       | BLE-Scan ohne Location-Pflicht               |
+| `BLUETOOTH_CONNECT`                         | GATT-Connect, Notify-Subscriptions           |
+| `POST_NOTIFICATIONS` (Android 13+)          | Foreground-Service-Notification mit km/h + Akku |
+| `FOREGROUND_SERVICE_CONNECTED_DEVICE` (34+) | FGS-Type für laufende BLE-Verbindung im Hintergrund |
+| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`      | Onboarding-Prompt: Akku-Optimierung aus, damit Doze den FGS nicht killt |
 
 ## Was bewusst nicht geht
 
 - **OTA-Firmware-Update**: Zu riskant ohne offizielle Signaturen.
-- **Tuning / Speed-Cap-Override**: Geht über die App nicht. Wäre Eingriff
-  in den Controller und in DE rechtlich problematisch.
-- **Cloud-Sync / Account**: Bewusst weggelassen, offline-only.
+- **Tuning über 22 km/h**: Der Max-Speed-Slider geht zwar bis 30, der
+  Hobbywing-Controller cappt aber bei 22 km/h und verwirft höhere Werte
+  silent. Ein echter Tuning-Bypass würde Eingriff in die Controller-Firmware
+  bedeuten und ist in DE rechtlich problematisch — bewusst nicht angegangen.
+- **Cloud-Sync / Account**: Bewusst weggelassen, offline-only. Live-Streaming
+  läuft optional zu deinem eigenen Self-Hosted Node-Server.
 
 ## Quellen
 

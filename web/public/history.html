@@ -40,6 +40,24 @@
       <div id="filter-chips" class="flex gap-1.5 flex-wrap"></div>
       <span id="filter-status" class="ml-auto text-xs text-[var(--color-on-surface-dim)]"></span>
     </div>
+    <div id="custom-range-panel"
+         class="hidden rounded-2xl bg-[var(--color-surface-1)] p-3 sm:p-4 flex flex-wrap items-end gap-3">
+      <label class="text-xs text-[var(--color-on-surface-dim)] flex flex-col gap-1">
+        Von
+        <input id="custom-range-from" type="date"
+               class="bg-[var(--color-surface-2)] text-[var(--color-on-surface)] text-sm rounded-lg px-2 py-1 border border-white/5 focus:outline-none focus:border-[var(--color-brand-teal)]" />
+      </label>
+      <label class="text-xs text-[var(--color-on-surface-dim)] flex flex-col gap-1">
+        Bis
+        <input id="custom-range-to" type="date"
+               class="bg-[var(--color-surface-2)] text-[var(--color-on-surface)] text-sm rounded-lg px-2 py-1 border border-white/5 focus:outline-none focus:border-[var(--color-brand-teal)]" />
+      </label>
+      <button id="custom-range-apply"
+              class="text-xs px-3 py-1.5 rounded-full bg-[var(--color-brand-teal)] text-black font-medium hover:opacity-90">
+        Übernehmen
+      </button>
+      <span id="custom-range-error" class="text-xs text-[var(--color-brand-magenta)] hidden">Bitte gültige Daten wählen (Von ≤ Bis).</span>
+    </div>
     <div id="trip-list" class="grid gap-3"></div>
     <div id="empty-msg"
          class="hidden text-center text-[var(--color-on-surface-dim)] py-12">
