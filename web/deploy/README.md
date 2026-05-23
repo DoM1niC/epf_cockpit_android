@@ -155,3 +155,42 @@ limit_req_zone $binary_remote_addr zone=cockpit:10m rate=30r/s;
 ```
 
 und im `server{}`-Block `limit_req zone=cockpit burst=60 nodelay;` aktivieren.
+
+---
+
+## Alternative: Docker / Compose
+
+Wer keinen systemd-Service möchte, kann den Stack auch containerisiert
+laufen lassen. Files: [`web/Dockerfile`](../Dockerfile),
+[`web/docker-compose.yml`](../docker-compose.yml),
+[`web/.dockerignore`](../.dockerignore).
+
+```bash
+cd /opt/epf-cockpit-src/web
+cp .env.example .env                  # Tokens setzen (oder leer = no-auth)
+docker compose up -d --build
+docker compose logs -f                # Live-Log
+```
+
+- Bind-mount: SQLite-DB liegt unter `./data/epf.db` auf dem Host — Backup
+  einfach per `tar` möglich, kein `docker cp` nötig.
+- Port `8787` ist nach außen exposed. Hinter nginx ändern auf
+  `127.0.0.1:8787:8787` (siehe Kommentar in `docker-compose.yml`).
+- Image baut multi-stage: `node:22-bookworm-slim`-Builder kompiliert
+  `better-sqlite3` (native node-gyp) + Tailwind, Runtime-Stage hat nur
+  Produktion-Deps + Built-Assets (~250 MB statt ~600 MB).
+- Container läuft als unprivileged `node`-User (UID 1000) — der Bind-
+  Mount muss demselben User gehören (`chown -R 1000:1000 ./data`).
+- Healthcheck pollt `/healthz` alle 30 s — `docker compose ps` zeigt
+  `(healthy)` wenn der Server hochgekommen ist.
+
+Update-Workflow:
+```bash
+cd /opt/epf-cockpit-src && sudo git pull --ff-only
+cd web && docker compose up -d --build
+```
+
+Backwards-kompatibel: der bestehende systemd-Service und der Container
+nutzen identische Env-Variablen + DB-Schema, du kannst zwischen den
+beiden hin- und her switchen (aber NIE gleichzeitig laufen lassen,
+sonst kollidieren die WAL-Locks auf `epf.db`).

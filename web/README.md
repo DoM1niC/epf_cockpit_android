@@ -35,6 +35,18 @@ npm run dev
 Tailwind is only rebuilt by `npm run build` / `npm run build:css`. Run it
 again whenever you change HTML or `public/css/tailwind.css`.
 
+### Docker / Compose
+
+```bash
+cp .env.example .env           # tokens setzen (oder leer = no-auth)
+docker compose up -d --build   # http://localhost:8787
+docker compose logs -f
+```
+
+Persistente SQLite-DB landet im bind-gemounteten `./data/`. Details
+(Multi-Stage-Build, Healthcheck, Update-Flow, nginx-Integration) im
+[deploy-README](deploy/README.md#alternative-docker--compose).
+
 ## Environment variables
 
 | Var       | Default            | Notes                              |

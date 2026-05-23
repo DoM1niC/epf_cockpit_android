@@ -1,0 +1,36 @@
+# Build context slim halten — alles was die Image-Stage nicht braucht.
+# Spart Layer-Größe + verhindert dass lokaler State ins Image leakt.
+
+node_modules
+npm-debug.log*
+.npm
+
+# Lokale SQLite-DBs / WAL-Files — Volume-Mount übernimmt das im Container.
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Build-Artefakte werden im Builder-Stage frisch generiert.
+public/dist
+public/vendor
+
+# Secrets nie ins Image — .env wird via env_file in docker-compose injiziert.
+.env
+.env.*
+!.env.example
+
+# Docker-Files selber + Deploy-Scripts (systemd/nginx) sind nicht nötig
+# im Container.
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+deploy/
+
+# Lokale Sniff-Artefakte / IDE / OS
+.sniff/
+.idea/
+.vscode/
+*.log
+.DS_Store
+Thumbs.db

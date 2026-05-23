@@ -1,0 +1,60 @@
+# EPF Cockpit Web — Docker-Compose-Stack
+#
+# Minimaler Single-Service-Setup: Node-Server hört auf 8787, SQLite-WAL in
+# einem bind-mounted ./data-Verzeichnis (persistent über Container-Restarts).
+# Tokens werden via .env injiziert (NICHT committen) — Beispiel in .env.example.
+#
+# Quick-Start:
+#   cp .env.example .env       # Tokens setzen (oder leer lassen = keine Auth)
+#   docker compose up -d --build
+#   docker compose logs -f
+#
+# Update:
+#   git pull
+#   docker compose up -d --build
+#
+# Für Produktion: dieser Service exposed Port 8787 auf alle Interfaces. Wer
+# ihn nur über nginx erreichbar haben will, setzt unter `ports:` z.B.
+# "127.0.0.1:8787:8787" und konfiguriert den externen nginx als Reverse Proxy
+# (Beispiel in deploy/nginx.conf — der proxy_pass passt 1:1).
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: epf-cockpit-web:latest
+    container_name: epf-cockpit-web
+    restart: unless-stopped
+    ports:
+      - "8787:8787"
+    volumes:
+      # Bind-mount damit der User direkt im Repo das DB-File sieht/backupen
+      # kann. Für isoliertere Setups stattdessen ein named volume verwenden:
+      #   volumes:
+      #     - epf_data:/app/data
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      # PORT/BIND_ADDR/DB_PATH sind auch im Dockerfile als Default gesetzt;
+      # hier nochmal explizit, damit `.env` sie überschreiben kann ohne dass
+      # man den Container neu bauen muss.
+      PORT: 8787
+      BIND_ADDR: 0.0.0.0
+      DB_PATH: /app/data/epf.db
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8787/healthz').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+# Alternativ als named volume (würde data-bind-mount oben ersetzen):
+# volumes:
+#   epf_data:
