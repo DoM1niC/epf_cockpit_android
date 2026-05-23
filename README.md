@@ -82,11 +82,11 @@ Release-Keystore signiert und ersetzen eine bestehende Installation in-place.
 
 | | |
 |---|---|
-| ![Scan-View](screenshots/scan_screen.webp) | ![Dashboard – Tacho + Akku](screenshots/dashboard_1.webp) |
+| <img src="screenshots/scan_screen.webp" width="280" alt="Scan-View"> | <img src="screenshots/dashboard_1.webp" width="280" alt="Dashboard – Tacho + Akku"> |
 | Scan: BLE-Suche mit EPF/ePF/ZYD-Filter, Live-RSSI | Dashboard: Speed-Ring + Akku-Donut + Stat-Tiles |
-| ![Dashboard – Steuerung](screenshots/dashboard_2.webp) | ![Trips](screenshots/trips.webp) |
+| <img src="screenshots/dashboard_2.webp" width="280" alt="Dashboard – Steuerung"> | <img src="screenshots/trips.webp" width="280" alt="Trips"> |
 | Steuerung: Parking-Switch, Modus-Toggle, Blinkerton | Trips: Fahrtenliste mit Zeitraum-Filter + Aggregat-Stats |
-| ![Settings](screenshots/settings.png) | |
+| <img src="screenshots/settings.png" width="280" alt="Settings"> | |
 | Settings: Theme + Live-Streaming an Web-Dashboard + Max-Geschwindigkeit | |
 
 ## Technische Dokumentation
