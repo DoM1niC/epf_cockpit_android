@@ -8,6 +8,12 @@
 
   const WINDOW_MS = 5 * 60 * 1000; // 5 minutes (live buffer)
   const buf = { ts: [], speed: [], power: [], batt: [] };
+  // Anzeige-Fenster im Live-Mode — wird über Wheel-Zoom verkleinert/vergrößert
+  // (15s..300s). Buffer bleibt fix bei WINDOW_MS, sodass Zoom-Out auf 5 min
+  // jederzeit ohne Daten-Loch geht.
+  const DEFAULT_LIVE_WINDOW_S = WINDOW_MS / 1000;
+  const MIN_LIVE_WINDOW_S = 15;
+  let liveWindowSeconds = DEFAULT_LIVE_WINDOW_S;
 
   // Time-range presets for the chart selector. "live" = use the rolling
   // in-memory buffer driven by the WS stream; everything else = one-shot
@@ -69,20 +75,33 @@
     return window.innerWidth < 640 ? 160 : 200;
   }
 
-  // Mausrad-Zoom-Plugin für uPlot (zentriert zum Cursor, x-Achse). Macht im
-  // Live-Modus nichts sichtbares weil scales.x.range() das Fenster pro Frame
-  // wieder auf "letzte 5 Min" pinnt — in den History-Presets (15min/1h/…)
-  // wirkt der Zoom, weil range() dort null returnt und uPlot den last
-  // setScale stehen lässt.
+  // Mausrad-Zoom-Plugin für uPlot. Zwei Modi:
+  // - Live: ändert das anzeigbare Fenster (15..300s), Auto-Pan bleibt aktiv.
+  //   Alle drei Charts werden synchron mitgezogen.
+  // - History: cursor-zentrierter Zoom über setScale, wirkt nur lokal.
   function wheelZoomPlugin({ factor = 0.85 } = {}) {
     return {
       hooks: {
         ready(u) {
           u.over.addEventListener('wheel', (e) => {
-            if (isLive()) return; // im Live-Modus ignorieren
             e.preventDefault();
             const left = u.cursor.left;
             if (left == null || left < 0) return;
+
+            if (isLive()) {
+              const oldS = liveWindowSeconds;
+              const newS = Math.max(
+                MIN_LIVE_WINDOW_S,
+                Math.min(DEFAULT_LIVE_WINDOW_S,
+                  e.deltaY < 0 ? oldS * factor : oldS / factor)
+              );
+              if (Math.abs(newS - oldS) < 0.5) return;
+              liveWindowSeconds = newS;
+              syncLiveWindow();
+              return;
+            }
+
+            // History: cursor-zentrierter Zoom
             const xVal = u.posToVal(left, 'x');
             const { min, max } = u.scales.x;
             const oxRange = max - min;
@@ -92,9 +111,33 @@
             const nxMax = nxMin + nxRange;
             u.batch(() => u.setScale('x', { min: nxMin, max: nxMax }));
           }, { passive: false });
+
+          // Doppelklick im Live-Modus = Fenster auf Default (5 min) zurück.
+          u.over.addEventListener('dblclick', () => {
+            if (!isLive()) return;
+            if (liveWindowSeconds === DEFAULT_LIVE_WINDOW_S) return;
+            liveWindowSeconds = DEFAULT_LIVE_WINDOW_S;
+            syncLiveWindow();
+          });
         }
       }
     };
+  }
+
+  // Synct alle drei Live-Charts auf das aktuelle liveWindowSeconds-Fenster
+  // und aktualisiert die Range-Status-Zeile.
+  function syncLiveWindow() {
+    const now = Date.now() / 1000;
+    const span = { min: now - liveWindowSeconds, max: now };
+    chartSpeed && chartSpeed.setScale('x', span);
+    chartPower && chartPower.setScale('x', span);
+    chartBatt  && chartBatt.setScale('x',  span);
+    if (isLive()) {
+      const label = liveWindowSeconds === DEFAULT_LIVE_WINDOW_S
+        ? 'Live'
+        : `Live · ${liveWindowSeconds < 60 ? liveWindowSeconds.toFixed(0) + 's' : (liveWindowSeconds/60).toFixed(1) + ' min'} · Dblclick = Reset`;
+      setRangeStatus(label);
+    }
   }
 
   function makeChart(host, label, color, unit, digits, opts2 = {}) {
@@ -105,14 +148,15 @@
       scales: {
         x: {
           time: true,
-          // Live: rolling-5-min-Fenster, pro Frame neu berechnet.
+          // Live: rolling-Fenster (liveWindowSeconds, default 300s, via
+          // Wheel-Zoom verkleinerbar).
           // History: frozenFrom/frozenTo (gesetzt in applyRange). uPlot
           // ruft range() nur bei setData auf — User-Drag/Wheel-Zoom via
           // setScale triggert das NICHT, der Zoom bleibt also stabil.
           range: () => {
             if (isLive()) {
               const now = Date.now() / 1000;
-              return [now - WINDOW_MS / 1000, now];
+              return [now - liveWindowSeconds, now];
             }
             return [frozenFrom / 1000, frozenTo / 1000];
           },
@@ -218,6 +262,10 @@
     if (next.live) {
       frozenFrom = null;
       frozenTo = null;
+      // Beim Wechsel auf Live das Zoom-Fenster auf Default zurueck —
+      // sonst wirkt die alte Wheel-Position aus der vorigen Live-Session
+      // verwirrend (z.B. "Live · 30s" nach Auto-Switch).
+      liveWindowSeconds = DEFAULT_LIVE_WINDOW_S;
       setRangeStatus('Live');
       chartSpeed.setData([buf.ts, buf.speed]);
       chartPower.setData([buf.ts, buf.power]);
