@@ -7,7 +7,7 @@
   'use strict';
 
   const WINDOW_MS = 5 * 60 * 1000; // 5 minutes (live buffer)
-  const buf = { ts: [], speed: [], power: [] };
+  const buf = { ts: [], speed: [], power: [], batt: [] };
 
   // Time-range presets for the chart selector. "live" = use the rolling
   // in-memory buffer driven by the WS stream; everything else = one-shot
@@ -69,7 +69,7 @@
     return window.innerWidth < 640 ? 160 : 200;
   }
 
-  function makeChart(host, label, color, unit, digits) {
+  function makeChart(host, label, color, unit, digits, opts2 = {}) {
     const opts = {
       width: host.clientWidth || 600,
       height: chartHeight(),
@@ -87,6 +87,8 @@
             return [frozenFrom / 1000, frozenTo / 1000];
           },
         },
+        // Caller kann y-Achse fix-pinnen (z.B. Akku auf 0..100).
+        ...(opts2.yRange ? { y: { range: opts2.yRange } } : {}),
       },
       // Legende EIN — zeigt beim Hover Zeit + aktuellen Wert an.
       // isolate:true heißt: Klick auf eine Serie blendet andere aus (für uns
@@ -116,21 +118,27 @@
 
   const chartSpeed = makeChart($('chart-speed'), 'km/h', '#4DD0E1', 'km/h', 1);
   const chartPower = makeChart($('chart-power'), 'W',    '#E91E63', 'W',    0);
+  // Akku-Chart mit fixer 0..100%-y-Achse, sonst zappelt der Verlauf
+  // visuell wenn der Roller von 85→84 fällt.
+  const chartBatt  = makeChart($('chart-batt'),  '%',    '#FFB300', '%',    0,
+                               { yRange: [0, 100] });
 
   // Resize charts on viewport change so the cards stay tidy.
   function resizeCharts() {
     const h = chartHeight();
     chartSpeed.setSize({ width: $('chart-speed').clientWidth, height: h });
     chartPower.setSize({ width: $('chart-power').clientWidth, height: h });
+    chartBatt.setSize({  width: $('chart-batt').clientWidth,  height: h });
   }
   window.addEventListener('resize', resizeCharts);
   window.addEventListener('orientationchange', resizeCharts);
 
-  function pushPoint(ts, speedKmh, powerW) {
+  function pushPoint(ts, speedKmh, powerW, batteryPercent) {
     // uPlot uses seconds for time scales.
     buf.ts.push(ts / 1000);
     buf.speed.push(speedKmh ?? null);
     buf.power.push(powerW ?? null);
+    buf.batt.push(batteryPercent ?? null);
 
     // Drop points older than the window.
     const cutoff = (ts - WINDOW_MS) / 1000;
@@ -138,6 +146,7 @@
       buf.ts.shift();
       buf.speed.shift();
       buf.power.shift();
+      buf.batt.shift();
     }
     // Im History-Mode den Chart NICHT mit Live-Punkten überschreiben — der
     // User schaut sich gerade einen festen Zeitraum an, die Tiles sollen
@@ -145,6 +154,7 @@
     if (isLive()) {
       chartSpeed.setData([buf.ts, buf.speed]);
       chartPower.setData([buf.ts, buf.power]);
+      chartBatt.setData([buf.ts, buf.batt]);
     }
   }
 
@@ -180,6 +190,7 @@
       setRangeStatus('Live');
       chartSpeed.setData([buf.ts, buf.speed]);
       chartPower.setData([buf.ts, buf.power]);
+      chartBatt.setData([buf.ts, buf.batt]);
       return;
     }
 
@@ -197,8 +208,10 @@
       const xs = samples.map(s => s.ts / 1000);
       const speed = samples.map(s => s.speedKmh);
       const power = samples.map(s => s.powerW);
+      const batt  = samples.map(s => s.batteryPercent);
       chartSpeed.setData([xs, speed]);
       chartPower.setData([xs, power]);
+      chartBatt.setData([xs, batt]);
       setRangeStatus(`${samples.length} Punkte`);
     } catch (err) {
       console.warn('range fetch failed:', err);
@@ -235,7 +248,7 @@
     setText('t-temp',  fmt(t.controllerTempC, 0));
     setText('chip-parking',  'Parking: '  + (t.parking ? 'an' : 'aus'));
     setText('chip-ridemode', 'Modus: '    + (t.rideModeStand ? 'Stand' : 'Kick'));
-    pushPoint(t.ts || Date.now(), t.speedKmh, t.powerW);
+    pushPoint(t.ts || Date.now(), t.speedKmh, t.powerW, t.batteryPercent);
   }
 
   // ---------- WebSocket with exponential backoff ----------
