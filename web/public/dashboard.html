@@ -164,7 +164,16 @@
           Standort live
           <span id="live-map-meta" class="ml-auto text-[var(--color-on-surface-dim)] normal-case tracking-normal"></span>
         </div>
-        <div id="live-map" class="w-full rounded-xl overflow-hidden" style="height: 320px; z-index: 0;"></div>
+        <div class="relative">
+          <div id="live-map" class="w-full rounded-xl overflow-hidden" style="height: 320px; z-index: 0;"></div>
+          <!-- Zoom-Slider-Overlay (vertikal, links). z-index 401 = über Leaflet-Controls. -->
+          <div class="absolute left-2 top-2 z-[401] bg-[var(--color-surface-1)]/85 backdrop-blur rounded-lg px-2 py-3 flex flex-col items-center gap-2 select-none">
+            <span class="text-xs text-[var(--color-on-surface-dim)]">+</span>
+            <input id="live-map-zoom" type="range" min="2" max="19" step="1"
+                   class="live-map-zoom-slider" />
+            <span class="text-xs text-[var(--color-on-surface-dim)]">−</span>
+          </div>
+        </div>
       </div>
     </section>
   </main>

@@ -70,6 +70,18 @@
   color: var(--color-brand-teal);
 }
 
+/* Vertikaler Zoom-Slider fuer die Live-Map. writing-mode + slider-vertical
+   wirken in Chromium/Firefox/Safari modern; die Hoehe gilt dann als
+   "Slider-Laenge". rtl-direction kehrt um damit oben = max-zoom-in. */
+.live-map-zoom-slider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 24px;
+  height: 140px;
+  accent-color: var(--color-brand-teal);
+  cursor: pointer;
+}
+
 /* Lucide-Style-Icons: Stroke folgt currentColor, runde Joins.
    In Markup einsetzen mit <svg class="icon w-4 h-4">…</svg>; größere
    Varianten einfach via Tailwind-Sizing. */

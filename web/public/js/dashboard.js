@@ -293,12 +293,24 @@
   // Trail = letzte N Punkte der aktuellen Fahrt; wechselt der tripId, wird
   // der Trail gepurged damit nicht zwei Fahrten zusammenkleben.
   const TRAIL_MAX_POINTS = 500;
+  // Smart auto-refocus: pausiert nach User-Interaktion, kommt nach IDLE_MS
+  // Stille zurück. Ausserdem direkt wieder an, sobald der Marker ausserhalb
+  // des sichtbaren Bereichs landet — dann ist die User-Aussicht eh unbrauchbar.
+  const AUTO_FOLLOW_IDLE_MS = 10_000;
   let liveMap = null;
   let liveMarker = null;
   let liveTrail = null;
   let liveTrailPts = []; // [[lat,lon], ...]
   let liveTripId = null;
-  let liveAutoFollow = true; // auto-pan to marker; user-pan disables temporarily
+  let liveAutoFollow = true;
+  let liveAutoFollowTimer = null;
+  let liveZoomSlider = null;
+
+  function pauseAutoFollow() {
+    liveAutoFollow = false;
+    clearTimeout(liveAutoFollowTimer);
+    liveAutoFollowTimer = setTimeout(() => { liveAutoFollow = true; }, AUTO_FOLLOW_IDLE_MS);
+  }
 
   function initLiveMap() {
     if (liveMap || typeof L === 'undefined') return;
@@ -308,20 +320,63 @@
     L.Icon.Default.imagePath = '/vendor/leaflet/images/';
     section.classList.remove('hidden');
     liveMap = L.map(host, {
-      zoomControl: true,
+      // Default +/- weg — wir bauen eigenen Slider als Overlay.
+      zoomControl: false,
       attributionControl: true,
-      // Mausrad zoomt die Karte, nicht den page-scroll.
       scrollWheelZoom: true,
     }).setView([51.16, 10.45], 6); // Default: Mitte-Deutschland bis erste Position
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+
+    // Tile-Layer-Set (alle frei, kein API-Key).
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '© OpenStreetMap contributors',
-    }).addTo(liveMap);
+    });
+    const sat = L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      {
+        maxZoom: 19,
+        attribution: 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics',
+      }
+    );
+    const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      maxZoom: 17,
+      attribution: 'Map data: © OpenStreetMap contributors, SRTM | © OpenTopoMap (CC-BY-SA)',
+    });
+    osm.addTo(liveMap); // Default
+    L.control.layers(
+      { 'Straßen': osm, 'Satellit': sat, 'Topographie': topo },
+      null,
+      { position: 'topright', collapsed: true }
+    ).addTo(liveMap);
+
     liveTrail = L.polyline([], { color: '#4DD0E1', weight: 4, opacity: 0.85 }).addTo(liveMap);
-    // Wenn User die Karte manuell pant/zoomt, auto-follow pausieren bis er
-    // doppelklickt (= reset).
-    liveMap.on('dragstart zoomstart', () => { liveAutoFollow = false; });
-    liveMap.on('dblclick', () => { liveAutoFollow = true; });
+
+    // Zoom-Slider-Overlay (vertikal, links oben, weil topright von der
+    // Layer-Control belegt ist).
+    liveZoomSlider = document.getElementById('live-map-zoom');
+    if (liveZoomSlider) {
+      liveZoomSlider.min = liveMap.getMinZoom();
+      liveZoomSlider.max = liveMap.getMaxZoom();
+      liveZoomSlider.value = liveMap.getZoom();
+      liveZoomSlider.addEventListener('input', () => {
+        // setZoom triggert zoomend → wir würden uns selbst overriden;
+        // pauseAutoFollow um zu signalisieren dass das eine Geste war.
+        liveMap.setZoom(Number(liveZoomSlider.value));
+        pauseAutoFollow();
+      });
+      liveMap.on('zoomend', () => {
+        liveZoomSlider.value = liveMap.getZoom();
+      });
+    }
+
+    // User-Interaktion pausiert auto-follow (10s IDLE-Timer in pauseAutoFollow).
+    liveMap.on('dragstart zoomstart', pauseAutoFollow);
+    // Doppelklick = expliziter Reset (auto-follow sofort wieder an).
+    liveMap.on('dblclick', () => {
+      liveAutoFollow = true;
+      clearTimeout(liveAutoFollowTimer);
+      if (liveMarker) liveMap.panTo(liveMarker.getLatLng());
+    });
   }
 
   function applyLocation(msg) {
@@ -350,6 +405,13 @@
       liveMap.setView(ll, 17);
     } else {
       liveMarker.setLatLng(ll);
+      // Smart: wenn Marker ausserhalb sichtbar ist während auto-follow off
+      // — User-View ist eh unbrauchbar, also direkt zurückspringen + auto
+      // wieder an.
+      if (!liveAutoFollow && !liveMap.getBounds().pad(-0.05).contains(ll)) {
+        liveAutoFollow = true;
+        clearTimeout(liveAutoFollowTimer);
+      }
       if (liveAutoFollow) liveMap.panTo(ll, { animate: true, duration: 0.5 });
     }
 
