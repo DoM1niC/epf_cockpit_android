@@ -45,6 +45,18 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_telemetry_trip ON telemetry(trip_id, ts);
   CREATE INDEX IF NOT EXISTS idx_telemetry_ts ON telemetry(ts);
+
+  CREATE TABLE IF NOT EXISTS trip_locations (
+    trip_id    TEXT    NOT NULL,
+    ts         INTEGER NOT NULL,
+    lat        REAL    NOT NULL,
+    lon        REAL    NOT NULL,
+    accuracy_m REAL,
+    speed_mps  REAL,
+    PRIMARY KEY (trip_id, ts),
+    FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_trip_locations_trip ON trip_locations(trip_id);
 `);
 
 // Prepared statements — created once, reused on every insert/query.
@@ -98,7 +110,10 @@ const stmts = {
   `),
 
   getTripSamples: db.prepare(`
-    SELECT ts, speed_kmh AS speedKmh, power_w AS powerW
+    SELECT ts,
+           speed_kmh        AS speedKmh,
+           power_w          AS powerW,
+           battery_percent  AS batteryPercent
       FROM telemetry
      WHERE trip_id = ?
      ORDER BY ts ASC
@@ -113,6 +128,26 @@ const stmts = {
        SET trip_id = @tripId
      WHERE trip_id IS NULL
        AND ts BETWEEN @startedAt AND @endedAt
+  `),
+
+  // GPS-Waypoints. INSERT OR IGNORE damit der Backfill aus trip_end keine
+  // Konflikte mit live gestreamten Punkten gleichen Zeitstempels macht.
+  insertLocation: db.prepare(`
+    INSERT OR IGNORE INTO trip_locations
+      (trip_id, ts, lat, lon, accuracy_m, speed_mps)
+    VALUES
+      (@tripId, @ts, @lat, @lon, @accuracyM, @speedMps)
+  `),
+
+  getTripLocations: db.prepare(`
+    SELECT ts,
+           lat,
+           lon,
+           accuracy_m AS accuracyM,
+           speed_mps  AS speedMps
+      FROM trip_locations
+     WHERE trip_id = ?
+     ORDER BY ts ASC
   `)
 };
 
@@ -161,6 +196,43 @@ export function getTripSamples(id) {
 
 export function linkTelemetryToTrip(args) {
   return stmts.linkTelemetryToTrip.run(args);
+}
+
+export function insertLocation(row) {
+  stmts.insertLocation.run({
+    tripId:    row.tripId,
+    ts:        row.ts ?? Date.now(),
+    lat:       row.lat,
+    lon:       row.lon,
+    accuracyM: row.accuracyM ?? null,
+    speedMps:  row.speedMps  ?? null,
+  });
+}
+
+export function getTripLocations(tripId) {
+  return stmts.getTripLocations.all(tripId);
+}
+
+// Batch-Insert für den trip_end-Backfill. In einer Transaction, weil das bei
+// längeren Fahrten schnell ein paar hundert Punkte sind und Einzel-Inserts
+// hier WAL-Schreibverkehr unnötig vervielfachen.
+export const insertTripLocationsTx = db.transaction((tripId, locations) => {
+  for (const loc of locations) {
+    if (loc == null || loc.lat == null || loc.lon == null || loc.ts == null) continue;
+    stmts.insertLocation.run({
+      tripId,
+      ts:        loc.ts,
+      lat:       loc.lat,
+      lon:       loc.lon,
+      accuracyM: loc.accuracy_m ?? loc.accuracyM ?? null,
+      speedMps:  loc.speed_mps  ?? loc.speedMps  ?? null,
+    });
+  }
+});
+
+export function insertTripLocations(tripId, locations) {
+  if (!tripId || !Array.isArray(locations) || locations.length === 0) return;
+  insertTripLocationsTx(tripId, locations);
 }
 
 /**

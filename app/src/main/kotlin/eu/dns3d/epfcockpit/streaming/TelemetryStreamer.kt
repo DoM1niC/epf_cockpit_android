@@ -222,6 +222,32 @@ class TelemetryStreamer @Inject constructor(
         sendRaw<StreamMessage>(msg)
     }
 
+    /**
+     * Live-Waypoint vom [eu.dns3d.epfcockpit.data.LocationCollector]. Identisch
+     * zu [send] — eigene Methode, damit die Call-Sites lesbar bleiben und der
+     * Streamer später bei Bedarf ein Throttling/Burst-Filtering einfügen kann
+     * ohne dass die Caller anpassen müssen.
+     */
+    fun sendLocation(
+        tripId: String,
+        ts: Long,
+        lat: Double,
+        lon: Double,
+        accuracyM: Float?,
+        speedMps: Float?,
+    ) {
+        sendRaw<StreamMessage>(
+            StreamMessage.Location(
+                tripId = tripId,
+                ts = ts,
+                lat = lat,
+                lon = lon,
+                accuracyM = accuracyM,
+                speedMps = speedMps,
+            )
+        )
+    }
+
     private companion object {
         const val TAG = "TelemetryStreamer"
     }

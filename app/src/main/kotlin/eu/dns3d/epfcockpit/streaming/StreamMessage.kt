@@ -67,5 +67,39 @@ sealed interface StreamMessage {
         val maxSpeedKmh: Double,
         val avgSpeedKmh: Double,
         val scooterAddress: String?,
+        /**
+         * Optional alle aufgenommenen GPS-Waypoints des Trips. Wird vom
+         * TripCoordinator beim Trip-End mitgeschickt (Live-Finalisierung) und
+         * vom TripSyncer beim Backfill — damit der Server auch dann an die
+         * Waypoints kommt, wenn die Live-`location`-Frames verloren gingen
+         * (Mobilfunkloch, Server down, Streaming-Switch aus).
+         */
+        val locations: List<LocationPoint>? = null,
     ) : StreamMessage
+
+    /**
+     * Live-Waypoint während der Fahrt. Wird vom [eu.dns3d.epfcockpit.data.LocationCollector]
+     * pro GPS-Sample geschickt (~5s-Intervall). Der Server validiert die
+     * Frame gegen INGEST_TOKEN wie jedes andere Ingest-Event auch.
+     */
+    @Serializable
+    @SerialName("location")
+    data class Location(
+        val tripId: String,
+        val ts: Long,
+        val lat: Double,
+        val lon: Double,
+        @SerialName("accuracy_m") val accuracyM: Float? = null,
+        @SerialName("speed_mps") val speedMps: Float? = null,
+    ) : StreamMessage
+
+    /** Inline-Variante für [TripEnd.locations] — kein eigener Top-Level-Type. */
+    @Serializable
+    data class LocationPoint(
+        val ts: Long,
+        val lat: Double,
+        val lon: Double,
+        @SerialName("accuracy_m") val accuracyM: Float? = null,
+        @SerialName("speed_mps") val speedMps: Float? = null,
+    )
 }

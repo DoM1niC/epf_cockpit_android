@@ -34,6 +34,8 @@ data class SettingsUiState(
     val authenticated: Boolean = false,
     /** True wenn Roller parkt — Voraussetzung um Max-Speed *sicher* zu senden. */
     val parking: Boolean = false,
+    /** Opt-in für GPS-Waypoints pro Trip, default OFF. */
+    val trackLocation: Boolean = false,
 )
 
 @HiltViewModel
@@ -61,6 +63,7 @@ class SettingsViewModel @Inject constructor(
             streamingToken = s.streamingToken.orEmpty(),
             authenticated = (conn as? ConnectionState.Connected)?.authenticated == true,
             parking = tele?.parking == true,
+            trackLocation = s.trackLocation,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
 
@@ -108,6 +111,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setStreamingToken(token: String) {
         viewModelScope.launch { store.setStreamingToken(token) }
+    }
+
+    fun setTrackLocation(enabled: Boolean) {
+        viewModelScope.launch { store.setTrackLocation(enabled) }
     }
 
     fun changePin(newPin: String) {

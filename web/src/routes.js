@@ -1,7 +1,10 @@
 // routes.js — JSON API endpoints.
 
 import { Router } from 'express';
-import { listTrips, listTripsInRange, getTrip, getTripSamples, getTelemetryInRange } from './db.js';
+import {
+  listTrips, listTripsInRange, getTrip, getTripSamples,
+  getTelemetryInRange, getTripLocations
+} from './db.js';
 import { getSnapshot } from './broadcast.js';
 
 export const api = Router();
@@ -54,4 +57,16 @@ api.get('/trips/:id', (req, res) => {
     trip,
     samples: getTripSamples(req.params.id)
   });
+});
+
+// Route-Polyline für die Map-Visualisierung. Eigener Endpoint statt am
+// /trips/:id mit dranzuhaengen, damit alte Fahrten (ohne Locations) den
+// Chart sofort sehen und die Map asynchron nachladen kann.
+api.get('/trips/:id/locations', (req, res) => {
+  const trip = getTrip(req.params.id);
+  if (!trip) {
+    res.status(404).json({ error: 'trip_not_found' });
+    return;
+  }
+  res.json({ points: getTripLocations(req.params.id) });
 });

@@ -1,5 +1,6 @@
 package eu.dns3d.epfcockpit.ui.settings
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.clickable
@@ -21,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -58,11 +60,14 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.isGranted
+import com.google.accompanist.permissions.rememberPermissionState
 import eu.dns3d.epfcockpit.data.ThemeMode
 import eu.dns3d.epfcockpit.streaming.TelemetryStreamer
 import kotlin.math.roundToInt
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
@@ -73,6 +78,7 @@ fun SettingsScreen(
     val pinStatus by vm.pinStatus.collectAsStateWithLifecycle()
     val streamingStatus by vm.streamingStatus.collectAsStateWithLifecycle()
     var newPin by remember { mutableStateOf("") }
+    val locationPermission = rememberPermissionState(Manifest.permission.ACCESS_FINE_LOCATION)
 
     // Lokaler Buffer für das URL-Feld, damit der User tippen kann ohne dass jede
     // Tastatureingabe sofort durch den DataStore zurückgepushed wird.
@@ -242,6 +248,56 @@ fun SettingsScreen(
                 )
             }
 
+            SectionCard("Standortverfolgung", leadingIcon = Icons.Filled.LocationOn) {
+                val granted = locationPermission.status.isGranted
+                val needsPermission = state.trackLocation && !granted
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("GPS-Waypoints pro Trip", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            locationStatusText(
+                                enabled = state.trackLocation,
+                                granted = granted,
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (needsPermission)
+                                MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.trackLocation,
+                        onCheckedChange = { wanted ->
+                            vm.setTrackLocation(wanted)
+                            // Erst beim Einschalten den Runtime-Prompt feuern —
+                            // beim Ausschalten nicht, sonst nervt es bei jedem
+                            // Toggle. Wenn schon granted, kein Prompt nötig.
+                            if (wanted && !granted) {
+                                locationPermission.launchPermissionRequest()
+                            }
+                        },
+                    )
+                }
+                if (needsPermission) {
+                    Spacer(Modifier.height(8.dp))
+                    Button(
+                        onClick = { locationPermission.launchPermissionRequest() },
+                        shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Berechtigung erteilen") }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Wenn aktiv, zeichnet die App alle 5 Sekunden einen GPS-Punkt " +
+                        "auf — nur während eine Fahrt läuft und der Roller nicht " +
+                        "geparkt ist. Ohne Google-Dienste, direkt über " +
+                        "Android-LocationManager. Standort wird lokal gespeichert " +
+                        "und (falls Live-Streaming an ist) ans Dashboard geschickt.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
             SectionCard("Max-Geschwindigkeit", leadingIcon = Icons.Filled.Speed) {
                 MaxSpeedSection(
                     savedKmh = state.gear3,
@@ -399,6 +455,12 @@ private fun streamingStatusColor(status: TelemetryStreamer.Status, enabled: Bool
         status == TelemetryStreamer.Status.Failed -> MaterialTheme.colorScheme.error
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+
+private fun locationStatusText(enabled: Boolean, granted: Boolean): String = when {
+    !enabled -> "Aus – keine GPS-Aufzeichnung"
+    !granted -> "Berechtigung fehlt – tippe auf den Button unten"
+    else -> "Aktiv – läuft während Trips, wenn nicht geparkt"
+}
 
 @Composable
 private fun AboutContent() {

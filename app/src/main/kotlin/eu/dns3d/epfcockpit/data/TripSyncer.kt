@@ -53,6 +53,12 @@ class TripSyncer @Inject constructor(
         Log.i(TAG, "syncing ${trips.size} trips")
         for (trip in trips) {
             val tripId = TripCoordinator.LOCAL_ID_PREFIX + trip.id
+            // Optional aufgenommene GPS-Waypoints inline mitliefern, gleiche
+            // Logik wie TripCoordinator.finalizeAndClear — der Server kann
+            // sich beim Backfill nicht auf Live-`location`-Frames verlassen.
+            val waypoints = runCatching { tripDao.locationsForTrip(trip.id) }
+                .getOrElse { emptyList() }
+                .map { it.toLocationPoint() }
             streamer.send(
                 StreamMessage.TripEnd(
                     tripId = tripId,
@@ -64,6 +70,7 @@ class TripSyncer @Inject constructor(
                     maxSpeedKmh = trip.maxSpeedKmh.toDouble(),
                     avgSpeedKmh = trip.avgSpeedKmh.toDouble(),
                     scooterAddress = trip.scooterAddress,
+                    locations = waypoints.ifEmpty { null },
                 )
             )
             // 20 ms Gap → Socket nicht fluten, alles bleibt unter ~50 Trips/s.

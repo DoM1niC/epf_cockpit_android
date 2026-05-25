@@ -17,7 +17,9 @@ object AppModule {
 
     @Provides @Singleton
     fun provideTripDatabase(@ApplicationContext context: Context): TripDatabase =
-        Room.databaseBuilder(context, TripDatabase::class.java, "trips.db").build()
+        Room.databaseBuilder(context, TripDatabase::class.java, "trips.db")
+            .addMigrations(TripDatabase.MIGRATION_1_2)
+            .build()
 
     @Provides
     fun provideTripDao(db: TripDatabase): TripDao = db.tripDao()

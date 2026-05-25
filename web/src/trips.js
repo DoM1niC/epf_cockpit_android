@@ -3,7 +3,9 @@
 // our own current-trip pointer so telemetry inserts can always be tagged
 // with a trip_id (or null when no trip is active).
 
-import { startTrip, finalizeTripTx, linkTelemetryToTrip } from './db.js';
+import {
+  startTrip, finalizeTripTx, linkTelemetryToTrip, insertTripLocations
+} from './db.js';
 
 let currentTripId = null;
 
@@ -50,5 +52,15 @@ export function handleTripEnd(payload, fallbackScooterName = null) {
   // hängen. Damit die Detail-Ansicht "no samples" nicht mehr zeigt für
   // Fahrten die live gestreamt wurden.
   linkTelemetryToTrip({ tripId: id, startedAt, endedAt });
+  // GPS-Waypoints-Backfill aus trip_end. Idempotent via PK-Conflict, doppelt
+  // gestreamte Punkte (live + backfill) gehen also nicht verloren und legen
+  // die DB nicht lahm.
+  if (Array.isArray(payload.locations) && payload.locations.length > 0) {
+    try {
+      insertTripLocations(id, payload.locations);
+    } catch (err) {
+      console.warn('[trips] insertTripLocations failed:', err.message);
+    }
+  }
   if (id === currentTripId) currentTripId = null;
 }

@@ -99,8 +99,36 @@
           ${statHtml('zap',        'Energie',   `${fmtNum(trip.energy_wh, 1)} Wh`)}
         </dl>
         <div class="chart-host mt-4 hidden"></div>
+        <div class="map-host mt-3 hidden"></div>
       </article>
     `;
+  }
+
+  // Mausrad-Zoom-Plugin für uPlot. Standard hat nur Drag-to-Select-Zoom —
+  // Wheel-Zoom kommt nicht out-of-the-box. Wir zoomen mittig zum Cursor, das
+  // matched die Erwartung von Map/Plot-Apps. Doppelklick reset ist
+  // built-in via cursor.bind.dblclick.
+  function wheelZoomPlugin({ factor = 0.85 } = {}) {
+    return {
+      hooks: {
+        ready(u) {
+          u.over.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const left = u.cursor.left;
+            if (left == null || left < 0) return;
+            const xVal = u.posToVal(left, 'x');
+            const { min, max } = u.scales.x;
+            const oxRange = max - min;
+            // Negative deltaY = wheel up = zoom in (kleinere Range).
+            const nxRange = e.deltaY < 0 ? oxRange * factor : oxRange / factor;
+            const leftPct = left / u.bbox.width * window.devicePixelRatio;
+            const nxMin = xVal - leftPct * nxRange;
+            const nxMax = nxMin + nxRange;
+            u.batch(() => u.setScale('x', { min: nxMin, max: nxMax }));
+          }, { passive: false });
+        }
+      }
+    };
   }
 
   async function renderTripChart(article, tripId) {
@@ -123,17 +151,48 @@
 
     const xs = samples.map(s => s.ts / 1000);
     const ys = samples.map(s => s.speedKmh);
+    // Akku-Serie nur einbauen wenn auch wirklich Werte da sind (alte Trips
+    // vor dem battery_percent-Logging haben hier durchgehend null).
+    const batt = samples.map(s => s.batteryPercent);
+    const hasBatt = batt.some(v => v != null);
 
-    new uPlot({
-      width: host.clientWidth || 600,
-      height: window.innerWidth < 640 ? 150 : 180,
-      scales: { x: { time: true } },
-      // Legende mit Live-Werten unter dem Cursor — Hover zeigt Zeit + km/h.
+    // Toolbar oben + Canvas-Container + Hilfetext unten. Click-Stop-Propagation
+    // damit Button-Klicks nicht den Trip-Card-Collapse triggern.
+    host.innerHTML = `
+      <div class="flex items-center justify-between gap-2 mb-2 text-xs text-[var(--color-on-surface-dim)]">
+        <span>Ziehen = Zoom · Mausrad = Zoom · Doppelklick = Reset</span>
+        <button class="zoom-btn px-2 py-1 rounded-md bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] text-[var(--color-on-surface)]" type="button">Vergrößern</button>
+      </div>
+      <div class="chart-canvas"></div>
+    `;
+    const canvas = host.querySelector('.chart-canvas');
+    const btn = host.querySelector('.zoom-btn');
+
+    const baseHeight = window.innerWidth < 640 ? 180 : 220;
+    const largeHeight = window.innerWidth < 640 ? 360 : 460;
+    let large = false;
+
+    const chart = new uPlot({
+      width: canvas.clientWidth || 600,
+      height: baseHeight,
+      plugins: [wheelZoomPlugin({ factor: 0.85 })],
+      scales: {
+        x: { time: true },
+        // Akku auf eigener Achse — fix 0..100% damit der Verlauf nicht
+        // visuell explodiert wenn der User von 100→95 fährt.
+        batt: { range: [0, 100] },
+      },
+      // Legende mit Live-Werten unter dem Cursor — Hover zeigt Zeit + km/h + %.
       legend: { show: true, live: true },
       cursor: { drag: { x: true, y: false } },
       axes: [
         { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' }, values: EU_AXIS_VALUES },
-        { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' } }
+        { stroke: '#4DD0E1', grid: { stroke: 'rgba(255,255,255,0.05)' } },
+        // Akku-Achse rechts in Amber — visuell als "anderer Wert" erkennbar.
+        ...(hasBatt ? [{
+          scale: 'batt', stroke: '#FFB300', side: 1, grid: { show: false },
+          values: (_u, vals) => vals.map(v => v + '%'),
+        }] : []),
       ],
       series: [
         { label: 'Zeit', value: cursorValue },
@@ -143,21 +202,167 @@
           width: 2,
           fill: '#4DD0E122',
           spanGaps: true,
+          // points.show ist per Default eine Function die auto-anzeigt sobald
+          // die Punkte genug Abstand haben — heißt im Default-Zoom unsichtbar
+          // (Dot-Suppe vermieden), aber sobald man reinzoomt erscheinen die
+          // Messpunkte automatisch. size sets the dot-radius.
+          points: { size: 6 },
           value: (_self, v) => v == null ? '--' : `${v.toFixed(1)} km/h`,
-        }
-      ]
-    }, [xs, ys], host);
+        },
+        ...(hasBatt ? [{
+          label: 'Akku',
+          scale: 'batt',
+          stroke: '#FFB300',
+          width: 2,
+          dash: [4, 3],
+          spanGaps: true,
+          points: { size: 6 },
+          value: (_self, v) => v == null ? '--' : `${v.toFixed(0)} %`,
+        }] : []),
+      ],
+    }, hasBatt ? [xs, ys, batt] : [xs, ys], canvas);
+
+    // Vergrößern-Toggle: setSize() resized den Chart ohne re-init, der Zoom-
+    // State bleibt erhalten. stopPropagation damit der Klick nicht zum Trip-
+    // Card-Collapse-Handler hochbubblet.
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      large = !large;
+      chart.setSize({
+        width: canvas.clientWidth || 600,
+        height: large ? largeHeight : baseHeight,
+      });
+      btn.textContent = large ? 'Verkleinern' : 'Vergrößern';
+    });
+  }
+
+  // Leaflet braucht eine globale Default-Image-URL, sonst sucht es die Marker
+  // unter dem aktuellen Pfad (z.B. /history/marker-icon.png → 404). Wir
+  // pinnen den vendored Pfad einmalig beim ersten Map-Init.
+  let leafletImagePathFixed = false;
+  function fixLeafletImagePath() {
+    if (leafletImagePathFixed || typeof L === 'undefined') return;
+    L.Icon.Default.imagePath = '/vendor/leaflet/images/';
+    leafletImagePathFixed = true;
+  }
+
+  // Kleines Circle-Marker-Style-Preset — wir nutzen bewusst keine
+  // PNG-Default-Marker für Start/Ende, weil CircleMarker auf jedem Zoomlevel
+  // gleich groß bleiben und keinen zusätzlichen Asset-Request triggern.
+  const startMarkerStyle = {
+    radius: 7, color: '#0e1116', weight: 2,
+    fillColor: '#22c55e', fillOpacity: 1, // grün
+  };
+  const endMarkerStyle = {
+    radius: 7, color: '#0e1116', weight: 2,
+    fillColor: '#E91E63', fillOpacity: 1, // magenta/rot
+  };
+
+  async function renderTripMap(article, tripId) {
+    const host = article.querySelector('.map-host');
+    if (!host) return;
+    if (typeof L === 'undefined') {
+      // Leaflet konnte nicht geladen werden — Map einfach weglassen statt eine
+      // halbtote Card zu zeigen. Konsolen-Warning sagt was passiert ist.
+      console.warn('[history] Leaflet not available, skipping map');
+      return;
+    }
+    host.classList.remove('hidden');
+    host.innerHTML = '<div class="text-xs text-[var(--color-on-surface-dim)] px-2 py-1">Lade Route…</div>';
+
+    let points;
+    try {
+      const r = await window.EpfAuth.fetchAuthed(`/api/trips/${encodeURIComponent(tripId)}/locations`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      ({ points } = await r.json());
+    } catch (err) {
+      console.warn('[history] could not load trip locations:', err);
+      host.classList.add('hidden');
+      host.innerHTML = '';
+      return;
+    }
+
+    if (!points || points.length < 2) {
+      // Alte Fahrten ohne Locations: kleines, dezent gefärbtes Hint statt
+      // einer leeren Map-Karte. Card-Höhe bleibt klein, kein Tile-Container
+      // (height/rounded greift nur wenn .map-host die Klasse .has-map trägt).
+      host.innerHTML =
+        '<div class="text-xs text-[var(--color-on-surface-dim)] italic px-2 py-1">Keine Standortdaten für diese Fahrt.</div>';
+      host.classList.remove('has-map');
+      return;
+    }
+
+    fixLeafletImagePath();
+    host.innerHTML = '';
+    host.classList.add('has-map');
+
+    const latlngs = points.map(p => [p.lat, p.lon]);
+    const map = L.map(host, {
+      zoomControl: true,
+      attributionControl: true, // OSM-Lizenz verlangt sichtbare Attribution
+      scrollWheelZoom: false,   // Damit Scrollen in der Card nicht hängen bleibt
+    });
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    const poly = L.polyline(latlngs, {
+      color: '#4DD0E1',
+      weight: 4,
+      opacity: 0.9,
+      lineJoin: 'round',
+      lineCap: 'round',
+    }).addTo(map);
+
+    L.circleMarker(latlngs[0], startMarkerStyle)
+      .bindTooltip('Start', { direction: 'top', offset: [0, -8] })
+      .addTo(map);
+    L.circleMarker(latlngs[latlngs.length - 1], endMarkerStyle)
+      .bindTooltip('Ende', { direction: 'top', offset: [0, -8] })
+      .addTo(map);
+
+    map.fitBounds(poly.getBounds(), { padding: [16, 16] });
+
+    // Falls der Card zwischenzeitlich resized wurde (Card-Expansion lädt Chart
+    // erst, dann Map → Höhe steht möglicherweise erst nach Chart-Render), nach
+    // dem nächsten Tick invalidateSize aufrufen, damit Tiles korrekt sitzen.
+    requestAnimationFrame(() => map.invalidateSize());
+
+    // Map-Referenz festhalten, damit Collapse die Instanz korrekt aufräumt
+    // (Leaflet hält sonst Resize-Listener und Tile-Subscriptions am Leben).
+    host._leafletMap = map;
+  }
+
+  function disposeTripMap(article) {
+    const host = article.querySelector('.map-host');
+    if (host && host._leafletMap) {
+      try { host._leafletMap.remove(); } catch { /* ignore */ }
+      host._leafletMap = null;
+    }
   }
 
   function bindCardClicks() {
     list.querySelectorAll('article[data-trip-id]').forEach(article => {
       article.addEventListener('click', () => {
-        const host = article.querySelector('.chart-host');
-        if (!host.classList.contains('hidden') && host.children.length > 0) {
-          host.classList.add('hidden'); // collapse
+        const chartHost = article.querySelector('.chart-host');
+        if (!chartHost.classList.contains('hidden') && chartHost.children.length > 0) {
+          // Collapse: Chart + Map ausblenden, Map-Instanz freigeben.
+          chartHost.classList.add('hidden');
+          const mapHost = article.querySelector('.map-host');
+          if (mapHost) {
+            disposeTripMap(article);
+            mapHost.classList.add('hidden');
+            mapHost.classList.remove('has-map');
+            mapHost.innerHTML = '';
+          }
           return;
         }
+        // Chart zuerst (Hauptinhalt), Map asynchron daneben — die beiden
+        // fetches sind unabhängig, also nicht awaiten.
         renderTripChart(article, article.dataset.tripId);
+        renderTripMap(article, article.dataset.tripId);
       });
     });
   }

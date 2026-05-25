@@ -2,7 +2,7 @@
 // JSON frames (one per text message). No auth — single-user personal dashboard.
 
 import { WebSocketServer } from 'ws';
-import { insertTelemetry } from './db.js';
+import { insertTelemetry, insertLocation } from './db.js';
 import {
   broadcast, setLastState, setLastTelemetry
 } from './broadcast.js';
@@ -78,6 +78,33 @@ wss.on('connection', (ws, req) => {
         }
         setLastTelemetry(msg);
         broadcast(msg);
+        break;
+      }
+
+      case 'location': {
+        // GPS-Waypoint live während der Fahrt. Wir tag-en auf den jeweils
+        // aktuellen Trip wenn der Client keinen tripId mitschickt — analog
+        // zu telemetry.
+        const tripId = msg.tripId ?? getCurrentTripId();
+        if (!tripId || typeof msg.lat !== 'number' || typeof msg.lon !== 'number') {
+          // Kein Trip aktiv oder Koordinaten fehlen — verwerfen statt zu
+          // raten. Trip_end-Backfill räumt das später nach.
+          break;
+        }
+        try {
+          insertLocation({
+            tripId,
+            ts:        msg.ts ?? Date.now(),
+            lat:       msg.lat,
+            lon:       msg.lon,
+            accuracyM: msg.accuracy_m ?? msg.accuracyM ?? null,
+            speedMps:  msg.speed_mps  ?? msg.speedMps  ?? null,
+          });
+        } catch (err) {
+          console.warn('[ingest] insertLocation failed:', err.message);
+        }
+        // Live-Locations forwarden wir nicht aufs Live-Channel — der Dashboard
+        // braucht das (noch) nicht und es würde nur Lärm erzeugen.
         break;
       }
 

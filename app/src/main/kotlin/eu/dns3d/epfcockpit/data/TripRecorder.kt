@@ -22,6 +22,9 @@ class TripRecorder(private val scooterAddress: String) {
     private var speedSamples: Int = 0
     private var energyWh: Double = 0.0
 
+    /** True solange noch kein Sample reingekommen ist (initial state). */
+    fun isEmpty(): Boolean = startedAt == 0L
+
     fun onSample(sample: Telemetry, nowMillis: Long) {
         if (startedAt == 0L) {
             startedAt = nowMillis

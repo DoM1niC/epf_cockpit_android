@@ -15,6 +15,7 @@ import eu.dns3d.epfcockpit.MainActivity
 import eu.dns3d.epfcockpit.R
 import eu.dns3d.epfcockpit.ble.BleRepository
 import eu.dns3d.epfcockpit.ble.ConnectionState
+import eu.dns3d.epfcockpit.data.LocationCollector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -42,6 +43,11 @@ import kotlin.system.exitProcess
 class EpfConnectionService : Service() {
 
     @Inject lateinit var ble: BleRepository
+
+    // Eager-Inject damit der Singleton initialisiert wird sobald der FGS
+    // läuft — sonst wäre der LocationCollector erst beim ersten Hilt-Lookup
+    // wach (was z.B. erst beim Öffnen der Settings passieren würde).
+    @Suppress("unused") @Inject lateinit var locationCollector: LocationCollector
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var observerJob: Job? = null
@@ -131,7 +137,14 @@ class EpfConnectionService : Service() {
 
     private fun startInForeground(n: android.app.Notification) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE /* 34 */) {
-            startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+            // Service-Typen müssen das Manifest matchen (connectedDevice|location).
+            // Wir deklarieren beide Typen *immer* — auch wenn GPS gerade nicht
+            // läuft — damit der LocationCollector zur Laufzeit zuschalten darf
+            // ohne den FGS erst neu starten zu müssen. Das ist der von Google
+            // empfohlene Pfad ("any of the declared types is allowed at runtime").
+            val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            startForeground(NOTIF_ID, n, type)
         } else {
             startForeground(NOTIF_ID, n)
         }

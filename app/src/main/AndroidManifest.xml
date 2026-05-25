@@ -9,10 +9,23 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Optionales Trip-Tracking via AOSP-LocationManager (kein FusedLocation,
+         keine Play-Services). Wird zur Laufzeit nur dann angefordert wenn der
+         User den Standortverfolgung-Toggle in den Settings einschaltet.
+         FINE + COARSE Pflichtkombi ab API 31: Android verlangt beide, sonst
+         downgradet das System FINE silently auf COARSE — und Lint wirft
+         CoarseFineLocation. Wir fordern zur Laufzeit nur FINE an. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <!-- Foreground-Service hält BLE-GATT lebendig solange der Service läuft;
          der Notification-Slot zeigt km/h + Akku. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <!-- foregroundServiceType="location" auf dem FGS braucht ab API 34 eine
+         eigene Permission, sonst wirft startForeground SecurityException sobald
+         der Service-Typ "location" mit drin steht. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <!-- Damit das Cockpit auch bei längerer Standby-Zeit nicht vom Doze-Mode
          eingefroren wird, bitten wir den User aktiv um Akku-Whitelist. -->
@@ -46,10 +59,14 @@
 
         <!-- Cockpit-Foreground-Service: hält BLE-Connection + zeigt Live-Notification.
              foregroundServiceType=connectedDevice ist Pflicht ab API 34 für FGS,
-             die ein verbundenes Bluetooth-Gerät weiter bedienen. -->
+             die ein verbundenes Bluetooth-Gerät weiter bedienen.
+             "|location" kommt dazu damit der optionale LocationCollector während
+             der Fahrt GPS-Waypoints holen darf — der FGS-Typ muss alle Use-Cases
+             abdecken, sonst SecurityException sobald wir requestLocationUpdates
+             aufrufen während die App im Hintergrund läuft. -->
         <service
             android:name=".service.EpfConnectionService"
-            android:foregroundServiceType="connectedDevice"
+            android:foregroundServiceType="connectedDevice|location"
             android:exported="false" />
     </application>
 </manifest>

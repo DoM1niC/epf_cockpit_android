@@ -44,6 +44,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         /** True wenn der User den Startup-Permissions-Dialog schonmal gesehen UND beide
          *  Voraussetzungen erfüllt sind. Sonst wird er beim nächsten Start wieder angezeigt. */
         val startupPromptDone: Boolean,
+        /** Optionales GPS-Tracking pro Trip. Default OFF — wird erst aktiv wenn
+         *  der User es in den Settings einschaltet UND ACCESS_FINE_LOCATION
+         *  genehmigt hat. Siehe [eu.dns3d.epfcockpit.data.LocationCollector]. */
+        val trackLocation: Boolean,
     )
 
     val flow: Flow<Snapshot> = context.dataStore.data.map { p ->
@@ -62,6 +66,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             streamingEnabled = p[KEY_STREAMING_ENABLED] ?: false,
             streamingToken = p[KEY_STREAMING_TOKEN]?.takeIf { it.isNotBlank() },
             startupPromptDone = p[KEY_STARTUP_PROMPT_DONE] ?: false,
+            trackLocation = p[KEY_TRACK_LOCATION] ?: false,
         )
     }
 
@@ -131,6 +136,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         context.dataStore.edit { p -> p[KEY_STARTUP_PROMPT_DONE] = done }
     }
 
+    suspend fun setTrackLocation(enabled: Boolean) {
+        context.dataStore.edit { p -> p[KEY_TRACK_LOCATION] = enabled }
+    }
+
     private companion object {
         val KEY_ADDRESS = stringPreferencesKey("scooter_address")
         val KEY_NAME = stringPreferencesKey("scooter_name")
@@ -145,5 +154,6 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val KEY_STREAMING_ENABLED = booleanPreferencesKey("streaming_enabled")
         val KEY_STREAMING_TOKEN = stringPreferencesKey("streaming_token")
         val KEY_STARTUP_PROMPT_DONE = booleanPreferencesKey("startup_prompt_done")
+        val KEY_TRACK_LOCATION = booleanPreferencesKey("track_location")
     }
 }
