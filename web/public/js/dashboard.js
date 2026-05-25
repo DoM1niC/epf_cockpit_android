@@ -106,14 +106,15 @@
         x: {
           time: true,
           // Live: rolling-5-min-Fenster, pro Frame neu berechnet.
-          // History: null returnen damit uPlot den last setScale beibehält
-          // (sonst killt range() den User-Drag/Mausrad-Zoom sofort).
+          // History: frozenFrom/frozenTo (gesetzt in applyRange). uPlot
+          // ruft range() nur bei setData auf — User-Drag/Wheel-Zoom via
+          // setScale triggert das NICHT, der Zoom bleibt also stabil.
           range: () => {
             if (isLive()) {
               const now = Date.now() / 1000;
               return [now - WINDOW_MS / 1000, now];
             }
-            return null;
+            return [frozenFrom / 1000, frozenTo / 1000];
           },
         },
         // Caller kann y-Achse fix-pinnen (z.B. Akku auf 0..100).
