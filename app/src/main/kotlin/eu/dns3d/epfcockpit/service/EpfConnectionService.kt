@@ -3,12 +3,14 @@ package eu.dns3d.epfcockpit.service
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import dagger.hilt.android.AndroidEntryPoint
 import eu.dns3d.epfcockpit.EpfApplication
 import eu.dns3d.epfcockpit.MainActivity
@@ -137,13 +139,21 @@ class EpfConnectionService : Service() {
 
     private fun startInForeground(n: android.app.Notification) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE /* 34 */) {
-            // Service-Typen müssen das Manifest matchen (connectedDevice|location).
-            // Wir deklarieren beide Typen *immer* — auch wenn GPS gerade nicht
-            // läuft — damit der LocationCollector zur Laufzeit zuschalten darf
-            // ohne den FGS erst neu starten zu müssen. Das ist der von Google
-            // empfohlene Pfad ("any of the declared types is allowed at runtime").
-            val type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            // FGS-Type LOCATION zu requesten ohne ACCESS_FINE/COARSE_LOCATION
+            // granted wirft `SecurityException: Starting FGS with type location`
+            // (Android-Side-Check, app-side-Berechtigung reicht nicht). Heißt:
+            // wir starten standardmäßig nur mit CONNECTED_DEVICE und schalten
+            // LOCATION erst dazu wenn der User die Permission tatsächlich
+            // erteilt hat (Manifest deklariert beide Typen, Runtime wählt aus).
+            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            val locGranted = ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            if (locGranted) {
+                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            }
             startForeground(NOTIF_ID, n, type)
         } else {
             startForeground(NOTIF_ID, n)
