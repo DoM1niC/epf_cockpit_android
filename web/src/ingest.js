@@ -91,10 +91,11 @@ wss.on('connection', (ws, req) => {
           // raten. Trip_end-Backfill räumt das später nach.
           break;
         }
+        const locTs = msg.ts ?? Date.now();
         try {
           insertLocation({
             tripId,
-            ts:        msg.ts ?? Date.now(),
+            ts:        locTs,
             lat:       msg.lat,
             lon:       msg.lon,
             accuracyM: msg.accuracy_m ?? msg.accuracyM ?? null,
@@ -103,8 +104,17 @@ wss.on('connection', (ws, req) => {
         } catch (err) {
           console.warn('[ingest] insertLocation failed:', err.message);
         }
-        // Live-Locations forwarden wir nicht aufs Live-Channel — der Dashboard
-        // braucht das (noch) nicht und es würde nur Lärm erzeugen.
+        // Live-Forward an /ws/live damit das Dashboard den Marker bewegen kann.
+        // Wir normalisieren Field-Namen auf camelCase (im JS-Land bequemer).
+        broadcast({
+          type: 'location',
+          tripId,
+          ts: locTs,
+          lat: msg.lat,
+          lon: msg.lon,
+          accuracyM: msg.accuracy_m ?? msg.accuracyM ?? null,
+          speedMps:  msg.speed_mps  ?? msg.speedMps  ?? null,
+        });
         break;
       }
 

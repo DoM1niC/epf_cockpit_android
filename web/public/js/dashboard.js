@@ -69,22 +69,51 @@
     return window.innerWidth < 640 ? 160 : 200;
   }
 
+  // Mausrad-Zoom-Plugin für uPlot (zentriert zum Cursor, x-Achse). Macht im
+  // Live-Modus nichts sichtbares weil scales.x.range() das Fenster pro Frame
+  // wieder auf "letzte 5 Min" pinnt — in den History-Presets (15min/1h/…)
+  // wirkt der Zoom, weil range() dort null returnt und uPlot den last
+  // setScale stehen lässt.
+  function wheelZoomPlugin({ factor = 0.85 } = {}) {
+    return {
+      hooks: {
+        ready(u) {
+          u.over.addEventListener('wheel', (e) => {
+            if (isLive()) return; // im Live-Modus ignorieren
+            e.preventDefault();
+            const left = u.cursor.left;
+            if (left == null || left < 0) return;
+            const xVal = u.posToVal(left, 'x');
+            const { min, max } = u.scales.x;
+            const oxRange = max - min;
+            const nxRange = e.deltaY < 0 ? oxRange * factor : oxRange / factor;
+            const leftPct = left / u.bbox.width * window.devicePixelRatio;
+            const nxMin = xVal - leftPct * nxRange;
+            const nxMax = nxMin + nxRange;
+            u.batch(() => u.setScale('x', { min: nxMin, max: nxMax }));
+          }, { passive: false });
+        }
+      }
+    };
+  }
+
   function makeChart(host, label, color, unit, digits, opts2 = {}) {
     const opts = {
       width: host.clientWidth || 600,
       height: chartHeight(),
+      plugins: [wheelZoomPlugin({ factor: 0.85 })],
       scales: {
         x: {
           time: true,
-          // Im Live-Mode pinnen wir das Fenster auf "letzte 5 Min" und es
-          // wandert mit der Zeit mit. Im History-Mode haben wir nach dem
-          // Fetch ein gefrorenes from/to gesetzt — das nutzen wir hier dann.
+          // Live: rolling-5-min-Fenster, pro Frame neu berechnet.
+          // History: null returnen damit uPlot den last setScale beibehält
+          // (sonst killt range() den User-Drag/Mausrad-Zoom sofort).
           range: () => {
             if (isLive()) {
               const now = Date.now() / 1000;
               return [now - WINDOW_MS / 1000, now];
             }
-            return [frozenFrom / 1000, frozenTo / 1000];
+            return null;
           },
         },
         // Caller kann y-Achse fix-pinnen (z.B. Akku auf 0..100).
@@ -95,7 +124,8 @@
       // egal, wir haben nur eine). live:true heißt: Werte unter dem Cursor
       // werden in der Legende angezeigt.
       legend: { show: true, live: true },
-      cursor: { drag: { x: false, y: false } },
+      // Drag-Zoom auf x-Achse — wirkt nur in History (im Live frisst's range()).
+      cursor: { drag: { x: true, y: false } },
       axes: [
         { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' }, values: EU_AXIS_VALUES },
         { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' } }
@@ -212,7 +242,14 @@
       chartSpeed.setData([xs, speed]);
       chartPower.setData([xs, power]);
       chartBatt.setData([xs, batt]);
-      setRangeStatus(`${samples.length} Punkte`);
+      // x-scale explizit auf das gefetchte Fenster setzen — fungiert auch als
+      // "Zoom-Reset" wenn der User vorher in einen anderen Range reingezoomt
+      // hatte und jetzt einen Preset anklickt.
+      const xMin = from / 1000, xMax = to / 1000;
+      chartSpeed.setScale('x', { min: xMin, max: xMax });
+      chartPower.setScale('x', { min: xMin, max: xMax });
+      chartBatt.setScale('x',  { min: xMin, max: xMax });
+      setRangeStatus(`${samples.length} Punkte · Ziehen/Mausrad = Zoom · Dblclick = Reset`);
     } catch (err) {
       console.warn('range fetch failed:', err);
       setRangeStatus('Fehler – siehe Console');
@@ -251,6 +288,78 @@
     pushPoint(t.ts || Date.now(), t.speedKmh, t.powerW, t.batteryPercent);
   }
 
+  // ---------- Live-Map (Leaflet, OSM) ----------
+  // Lazy-init beim ersten location-Frame, vorher bleibt die Section hidden.
+  // Trail = letzte N Punkte der aktuellen Fahrt; wechselt der tripId, wird
+  // der Trail gepurged damit nicht zwei Fahrten zusammenkleben.
+  const TRAIL_MAX_POINTS = 500;
+  let liveMap = null;
+  let liveMarker = null;
+  let liveTrail = null;
+  let liveTrailPts = []; // [[lat,lon], ...]
+  let liveTripId = null;
+  let liveAutoFollow = true; // auto-pan to marker; user-pan disables temporarily
+
+  function initLiveMap() {
+    if (liveMap || typeof L === 'undefined') return;
+    const section = document.getElementById('live-map-section');
+    const host = document.getElementById('live-map');
+    if (!section || !host) return;
+    L.Icon.Default.imagePath = '/vendor/leaflet/images/';
+    section.classList.remove('hidden');
+    liveMap = L.map(host, {
+      zoomControl: true,
+      attributionControl: true,
+      // Mausrad zoomt die Karte, nicht den page-scroll.
+      scrollWheelZoom: true,
+    }).setView([51.16, 10.45], 6); // Default: Mitte-Deutschland bis erste Position
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap contributors',
+    }).addTo(liveMap);
+    liveTrail = L.polyline([], { color: '#4DD0E1', weight: 4, opacity: 0.85 }).addTo(liveMap);
+    // Wenn User die Karte manuell pant/zoomt, auto-follow pausieren bis er
+    // doppelklickt (= reset).
+    liveMap.on('dragstart zoomstart', () => { liveAutoFollow = false; });
+    liveMap.on('dblclick', () => { liveAutoFollow = true; });
+  }
+
+  function applyLocation(msg) {
+    if (typeof msg.lat !== 'number' || typeof msg.lon !== 'number') return;
+    initLiveMap();
+    if (!liveMap) return; // Leaflet nicht geladen
+
+    // Trip-Wechsel? → Trail purgen.
+    if (msg.tripId && msg.tripId !== liveTripId) {
+      liveTripId = msg.tripId;
+      liveTrailPts = [];
+      liveTrail.setLatLngs([]);
+    }
+
+    const ll = [msg.lat, msg.lon];
+    liveTrailPts.push(ll);
+    if (liveTrailPts.length > TRAIL_MAX_POINTS) liveTrailPts.shift();
+    liveTrail.setLatLngs(liveTrailPts);
+
+    if (!liveMarker) {
+      liveMarker = L.circleMarker(ll, {
+        radius: 8, color: '#0e1116', weight: 2,
+        fillColor: '#4DD0E1', fillOpacity: 1,
+      }).addTo(liveMap);
+      // Erste Position: aggressiv zoomen damit User was sieht.
+      liveMap.setView(ll, 17);
+    } else {
+      liveMarker.setLatLng(ll);
+      if (liveAutoFollow) liveMap.panTo(ll, { animate: true, duration: 0.5 });
+    }
+
+    const meta = document.getElementById('live-map-meta');
+    if (meta) {
+      const acc = msg.accuracyM != null ? ` · ±${msg.accuracyM.toFixed(0)}m` : '';
+      meta.textContent = `${liveTrailPts.length} Pkt${acc}`;
+    }
+  }
+
   // ---------- WebSocket with exponential backoff ----------
   let ws = null;
   let backoff = 500; // ms
@@ -271,6 +380,7 @@
       switch (msg.type) {
         case 'state':     applyState(msg); break;
         case 'telemetry': applyTelemetry(msg); break;
+        case 'location':  applyLocation(msg); break;
         // trip_start / trip_end are not surfaced on the live dashboard yet.
       }
     });
