@@ -57,6 +57,16 @@ db.exec(`
     FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_trip_locations_trip ON trip_locations(trip_id);
+
+  -- Vom User vergebener Anzeigename pro Scooter (Key = BLE-MAC). Wird vom
+  -- Smartphone via PUT /api/scooter-name gepushed und beim Setup auf einem
+  -- neuen Geraet via GET zurueck-synchronisiert, sodass der Name nicht
+  -- erneut eingetippt werden muss.
+  CREATE TABLE IF NOT EXISTS scooter_names (
+    address    TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `);
 
 // Prepared statements — created once, reused on every insert/query.
@@ -148,6 +158,22 @@ const stmts = {
       FROM trip_locations
      WHERE trip_id = ?
      ORDER BY ts ASC
+  `),
+
+  // Scooter-Anzeigenamen — Single-User-Setup, key = MAC.
+  getScooterName: db.prepare(`
+    SELECT address,
+           name,
+           updated_at AS updatedAt
+      FROM scooter_names
+     WHERE address = ?
+  `),
+  upsertScooterName: db.prepare(`
+    INSERT INTO scooter_names (address, name, updated_at)
+    VALUES (@address, @name, @updatedAt)
+    ON CONFLICT(address) DO UPDATE SET
+      name       = excluded.name,
+      updated_at = excluded.updated_at
   `)
 };
 
@@ -233,6 +259,25 @@ export const insertTripLocationsTx = db.transaction((tripId, locations) => {
 export function insertTripLocations(tripId, locations) {
   if (!tripId || !Array.isArray(locations) || locations.length === 0) return;
   insertTripLocationsTx(tripId, locations);
+}
+
+/**
+ * Anzeigename des Scooters mit gegebener BLE-MAC. Null wenn noch nie
+ * gespeichert.
+ */
+export function getScooterName(address) {
+  if (!address || typeof address !== 'string') return null;
+  return stmts.getScooterName.get(address) ?? null;
+}
+
+/**
+ * Upsert Anzeigename. Erwartet bereits getrimmten, non-empty `name` und
+ * eine non-empty `address` — Caller (Endpoint, ingest hello) ist fuer
+ * die Validierung verantwortlich.
+ */
+export function upsertScooterName(address, name, updatedAt = Date.now()) {
+  stmts.upsertScooterName.run({ address, name, updatedAt });
+  return { address, name, updatedAt };
 }
 
 /**

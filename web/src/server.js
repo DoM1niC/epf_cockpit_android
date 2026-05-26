@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 
 import { api } from './routes.js';
+import { scooterNames } from './scooter-names.js';
 import { ingestWss } from './ingest.js';
 import { liveWss } from './broadcast.js';
 import {
@@ -49,6 +50,11 @@ app.use('/vendor', express.static(path.join(publicDir, 'vendor'), { maxAge: '7d'
 // Health probe — public so uptime monitors / k8s / nginx upstream checks work
 // without needing a token. Doesn't leak telemetry.
 app.get('/healthz', (_req, res) => res.type('text/plain').send('ok'));
+
+// Scooter-Anzeigename-Sync: eigener Mount VOR `/api/*` damit der eigene
+// Auth-Pfad (INGEST_TOKEN ODER VIEW_TOKEN) den `requireView`-Block
+// bypassen kann — das Smartphone kennt nur das INGEST_TOKEN.
+app.use('/api/scooter-name', scooterNames);
 
 // View-gated routes: JSON API + HTML pages.
 app.use('/api', requireView, api);

@@ -139,22 +139,27 @@ class EpfConnectionService : Service() {
 
     private fun startInForeground(n: android.app.Notification) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE /* 34 */) {
-            // FGS-Type LOCATION zu requesten ohne ACCESS_FINE/COARSE_LOCATION
-            // granted wirft `SecurityException: Starting FGS with type location`
-            // (Android-Side-Check, app-side-Berechtigung reicht nicht). Heißt:
-            // wir starten standardmäßig nur mit CONNECTED_DEVICE und schalten
-            // LOCATION erst dazu wenn der User die Permission tatsächlich
-            // erteilt hat (Manifest deklariert beide Typen, Runtime wählt aus).
-            var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            // FGS-Type LOCATION braucht zusaetzlich zur Runtime-Permission auch
+            // dass der Service AUS DEM FOREGROUND gestartet wird — bei einem
+            // BLE-Auto-Reconnect aus dem Hintergrund crasht startForeground mit
+            // SecurityException. Wir probieren also erst mit LOCATION, fallen
+            // bei Misserfolg auf CONNECTED_DEVICE-only zurueck (GPS funktioniert
+            // dann zwar im Background nicht, aber das ist besser als App-Crash).
             val locGranted = ContextCompat.checkSelfPermission(
                 this, android.Manifest.permission.ACCESS_FINE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
                 this, android.Manifest.permission.ACCESS_COARSE_LOCATION
             ) == PackageManager.PERMISSION_GRANTED
-            if (locGranted) {
-                type = type or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            val deviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+            val fullType = if (locGranted) {
+                deviceType or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            } else deviceType
+            try {
+                startForeground(NOTIF_ID, n, fullType)
+            } catch (sec: SecurityException) {
+                Log.w(TAG, "FGS with LOCATION rejected (background-start?), falling back to device-only: ${sec.message}")
+                startForeground(NOTIF_ID, n, deviceType)
             }
-            startForeground(NOTIF_ID, n, type)
         } else {
             startForeground(NOTIF_ID, n)
         }

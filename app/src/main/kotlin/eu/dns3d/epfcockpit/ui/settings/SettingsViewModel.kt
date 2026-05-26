@@ -1,5 +1,6 @@
 package eu.dns3d.epfcockpit.ui.settings
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -8,12 +9,15 @@ import eu.dns3d.epfcockpit.ble.BleRepository
 import eu.dns3d.epfcockpit.ble.ConnectionState
 import eu.dns3d.epfcockpit.data.SettingsStore
 import eu.dns3d.epfcockpit.data.ThemeMode
+import eu.dns3d.epfcockpit.streaming.ScooterNameApi
 import eu.dns3d.epfcockpit.streaming.TelemetryStreamer
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -46,6 +50,7 @@ data class SettingsUiState(
 class SettingsViewModel @Inject constructor(
     private val ble: BleRepository,
     private val store: SettingsStore,
+    private val scooterNameApi: ScooterNameApi,
     streamer: TelemetryStreamer,
 ) : ViewModel() {
 
@@ -78,13 +83,63 @@ class SettingsViewModel @Inject constructor(
     private val _pinStatus = MutableStateFlow<String?>(null)
     val pinStatus: StateFlow<String?> = _pinStatus.asStateFlow()
 
+    /** Statushinweis fuer den Anzeigename-Sync, z.B. "Vom Server uebernommen". */
+    private val _scooterNameSyncStatus = MutableStateFlow<String?>(null)
+    val scooterNameSyncStatus: StateFlow<String?> = _scooterNameSyncStatus.asStateFlow()
+
+    // Welche MACs wir in dieser VM-Instanz schon vom Server abgefragt haben —
+    // damit der Pull-Side-Effect bei jeder Settings-Aenderung nicht endlos
+    // refetched. Reset on forget/disconnect-of-address waere nice, aber
+    // single-user und der User dreht selten zwischen mehreren Scootern.
+    private val pulledAddresses = mutableSetOf<String>()
+
     init {
         viewModelScope.launch {
             ble.atReplies.collect { reply ->
                 if (reply is AtResponse.PinChanged) _pinStatus.value = "PIN aktualisiert"
             }
         }
+        // Server-Pull: wenn lastScooterAddress UND streamingUrl/Token verfuegbar
+        // sind und Streaming enabled ist, aber lokal noch kein Name gesetzt
+        // ist — hole ihn vom Server. Verhindert dass der User auf einem neuen
+        // Smartphone den Namen re-tippen muss.
+        viewModelScope.launch {
+            store.flow
+                .map { s ->
+                    PullKey(
+                        address = s.lastScooterAddress,
+                        url = s.streamingUrl,
+                        token = s.streamingToken,
+                        enabled = s.streamingEnabled,
+                        localName = s.scooterFriendlyName,
+                    )
+                }
+                .distinctUntilChanged()
+                .collect { key ->
+                    val addr = key.address?.trim().orEmpty()
+                    val url = key.url?.trim().orEmpty()
+                    if (!key.enabled || addr.isEmpty() || url.isEmpty()) return@collect
+                    if (!key.localName.isNullOrBlank()) return@collect
+                    if (!pulledAddresses.add(addr)) return@collect
+                    val remote = scooterNameApi.fetch(url, key.token, addr) ?: return@collect
+                    // Race: User tippt waehrend des Fetches → Local wurde
+                    // inzwischen non-empty. Dann nicht ueberschreiben.
+                    val nowLocal = store.flow.first().scooterFriendlyName
+                    if (!nowLocal.isNullOrBlank()) return@collect
+                    store.setScooterFriendlyName(remote.name)
+                    _scooterNameSyncStatus.value = "Name vom Server übernommen"
+                    Log.i(TAG, "scooterName pulled from server: '${remote.name}' for $addr")
+                }
+        }
     }
+
+    private data class PullKey(
+        val address: String?,
+        val url: String?,
+        val token: String?,
+        val enabled: Boolean,
+        val localName: String?,
+    )
 
     fun setGears(g1: Int, g2: Int, g3: Int) {
         viewModelScope.launch { store.setGearLimits(g1, g2, g3) }
@@ -128,7 +183,21 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setScooterFriendlyName(name: String) {
-        viewModelScope.launch { store.setScooterFriendlyName(name) }
+        viewModelScope.launch {
+            store.setScooterFriendlyName(name)
+            val trimmed = name.trim()
+            if (trimmed.isEmpty()) return@launch
+            // Fire-and-forget Push an den Server. Wir warten NICHT auf das
+            // Ergebnis — der Hello-Frame des naechsten Streaming-Reconnects
+            // wuerde den Namen sowieso re-uploaden. Status-Hint sofort
+            // optimistisch setzen.
+            val snap = store.flow.first()
+            val url = snap.streamingUrl?.trim().orEmpty()
+            val addr = snap.lastScooterAddress?.trim().orEmpty()
+            if (!snap.streamingEnabled || url.isEmpty() || addr.isEmpty()) return@launch
+            val ok = scooterNameApi.push(url, snap.streamingToken, addr, trimmed)
+            _scooterNameSyncStatus.value = if (ok) "Mit Server synchronisiert" else "Server-Sync fehlgeschlagen"
+        }
     }
 
     fun changePin(newPin: String) {
@@ -142,5 +211,9 @@ class SettingsViewModel @Inject constructor(
             ble.disconnect()
             store.forgetScooter()
         }
+    }
+
+    private companion object {
+        const val TAG = "SettingsViewModel"
     }
 }

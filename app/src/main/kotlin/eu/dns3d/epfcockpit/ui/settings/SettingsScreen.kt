@@ -77,6 +77,7 @@ fun SettingsScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     val pinStatus by vm.pinStatus.collectAsStateWithLifecycle()
     val streamingStatus by vm.streamingStatus.collectAsStateWithLifecycle()
+    val nameSyncStatus by vm.scooterNameSyncStatus.collectAsStateWithLifecycle()
     var newPin by remember { mutableStateOf("") }
     val locationPermission = rememberPermissionState(Manifest.permission.ACCESS_FINE_LOCATION)
 
@@ -141,9 +142,23 @@ fun SettingsScreen(
                     Switch(checked = state.autoConnect, onCheckedChange = vm::setAutoConnect)
                 }
                 Spacer(Modifier.height(12.dp))
+                // Lokaler Buffer + 400ms-Debounce. Direktes commit-on-keystroke
+                // wuerde durch den DataStore-Roundtrip die Anzeige hinterhinken
+                // lassen (User sieht Zeichen verschwinden + wiederkommen).
+                // nameDraft = null heisst "noch nicht getippt" — wir zeigen
+                // den State-Wert, ohne ihn in den Buffer zu kopieren. Sobald
+                // der User tippt, uebernimmt der Buffer.
+                var nameDraft by remember { mutableStateOf<String?>(null) }
+                val nameShown = nameDraft ?: state.scooterFriendlyName
+                LaunchedEffect(nameDraft) {
+                    val cur = nameDraft ?: return@LaunchedEffect
+                    if (cur == state.scooterFriendlyName) return@LaunchedEffect
+                    kotlinx.coroutines.delay(400)
+                    vm.setScooterFriendlyName(cur)
+                }
                 OutlinedTextField(
-                    value = state.scooterFriendlyName,
-                    onValueChange = vm::setScooterFriendlyName,
+                    value = nameShown,
+                    onValueChange = { nameDraft = it },
                     label = { Text("Anzeigename") },
                     placeholder = { Text("z.B. Pulse Plus von Tom") },
                     singleLine = true,
@@ -151,10 +166,19 @@ fun SettingsScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Wird im Dashboard als Scooter-Label gezeigt. Leer = Fallback \"E-Scooter\".",
+                    "Wird im Dashboard als Scooter-Label gezeigt. Leer = Fallback \"E-Scooter\". " +
+                        "Bei aktivem Streaming wird der Name mit dem Server synchronisiert.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                nameSyncStatus?.let { msg ->
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        msg,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
 
             SectionCard("Darstellung", leadingIcon = Icons.Filled.DarkMode) {

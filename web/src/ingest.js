@@ -2,7 +2,7 @@
 // JSON frames (one per text message). No auth — single-user personal dashboard.
 
 import { WebSocketServer } from 'ws';
-import { insertTelemetry, insertLocation } from './db.js';
+import { insertTelemetry, insertLocation, upsertScooterName } from './db.js';
 import {
   broadcast, setLastState, setLastTelemetry
 } from './broadcast.js';
@@ -51,6 +51,20 @@ wss.on('connection', (ws, req) => {
     switch (msg.type) {
       case 'hello': {
         lastScooterName = msg.scooterName ?? null;
+        // Wenn das Smartphone Adresse + non-empty Name liefert, in
+        // scooter_names auto-upserten — damit ein neues Smartphone den
+        // Namen beim ersten Connect via GET /api/scooter-name abholen
+        // kann, ohne dass der User ihn re-tippt. Leerer Name darf NICHT
+        // ueberschreiben, sonst loescht ein neues Geraet ohne lokalen
+        // Namen den serverseitigen.
+        if (typeof msg.scooterAddress === 'string' && msg.scooterAddress.trim()
+            && typeof msg.scooterName === 'string' && msg.scooterName.trim()) {
+          try {
+            upsertScooterName(msg.scooterAddress.trim(), msg.scooterName.trim());
+          } catch (err) {
+            console.warn('[ingest] upsertScooterName (hello) failed:', err.message);
+          }
+        }
         const stateFrame = {
           type: 'state',
           connected: true,
