@@ -74,6 +74,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onForget: () -> Unit,
     onOpenNfc: () -> Unit = {},
+    onOpenNfcClone: () -> Unit = {},
     vm: SettingsViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -402,6 +403,20 @@ fun SettingsScreen(
                     shape = MaterialTheme.shapes.large,
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Tag scannen") }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Mit einem Magic-NTAG215 (Gen2 / UID-changeable) kann die UID einer " +
+                        "Original-Karte 1:1 geklont werden. Standard-NXP-NTAGs sind ab Werk " +
+                        "auf Page 0–2 schreibgeschützt und funktionieren nicht.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                FilledTonalButton(
+                    onClick = onOpenNfcClone,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Tag klonen (Magic NTAG215)") }
             }
 
             SectionCard("Über die App") {

@@ -18,6 +18,9 @@ import eu.dns3d.epfcockpit.R
 import eu.dns3d.epfcockpit.ble.BleRepository
 import eu.dns3d.epfcockpit.ble.ConnectionState
 import eu.dns3d.epfcockpit.data.LocationCollector
+import eu.dns3d.epfcockpit.widget.UnlockTileService
+import eu.dns3d.epfcockpit.widget.UnlockWidgetProvider
+import eu.dns3d.epfcockpit.widget.WidgetStateHolder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -63,8 +66,8 @@ class EpfConnectionService : Service() {
         super.onCreate()
         startInForeground(initialNotification())
         observerJob = scope.launch {
-            combine(ble.telemetry, ble.connection) { t, c -> t to c }
-                .collect { (t, c) ->
+            combine(ble.telemetry, ble.connection, settings.flow) { t, c, s -> Triple(t, c, s) }
+                .collect { (t, c, s) ->
                     val title = when (c) {
                         is ConnectionState.Connected ->
                             if (c.authenticated) "E-Scooter verbunden" else "E-Scooter – nicht authentifiziert"
@@ -78,6 +81,23 @@ class EpfConnectionService : Service() {
                         "Warte auf Telemetrie…"
                     }
                     updateNotification(title, body)
+                    // Home-Widget + Quick-Tile mit aktuellem Park/Mode-Zustand fuettern.
+                    val isConnected = c is ConnectionState.Connected
+                    val isAuth = (c as? ConnectionState.Connected)?.authenticated == true
+                    WidgetStateHolder.update(
+                        connected = isConnected,
+                        authenticated = isAuth,
+                        parking = t?.parking,
+                        rideModeStand = s.rideModeStand,
+                    )
+                    UnlockWidgetProvider.pushState(
+                        context = this@EpfConnectionService,
+                        connected = isConnected,
+                        authenticated = isAuth,
+                        parking = t?.parking,
+                        rideModeStand = s.rideModeStand,
+                    )
+                    UnlockTileService.requestRefresh(this@EpfConnectionService)
                 }
         }
     }
@@ -86,6 +106,10 @@ class EpfConnectionService : Service() {
         // Quick-Tile / Widget-Actions: warten ggf. auf BLE-Connect, dann senden.
         when (intent?.action) {
             ACTION_UNLOCK -> handleAction { ble.setParking(false) }
+            ACTION_TOGGLE_PARK -> scope.launch {
+                val current = ble.telemetry.value?.parking ?: false
+                handleAction { ble.setParking(!current) }
+            }
             ACTION_TOGGLE_RIDE_MODE -> scope.launch {
                 val current = settings.flow.first().rideModeStand
                 val next = !current
@@ -212,8 +236,10 @@ class EpfConnectionService : Service() {
     companion object {
         private const val TAG = "EpfConnectionService"
         private const val NOTIF_ID = 4711
-        /** Quick-Tile/Widget-Action: Roller entsperren (Park-Bremse loesen). */
+        /** Quick-Tile-Action: Roller immer entsperren (Park-Bremse lösen). */
         const val ACTION_UNLOCK = "eu.dns3d.epfcockpit.action.UNLOCK"
+        /** Widget-Action: Park-Zustand toggeln (entsperrt ↔ gesperrt). */
+        const val ACTION_TOGGLE_PARK = "eu.dns3d.epfcockpit.action.TOGGLE_PARK"
         /** Widget-Action: Stand-Stop ↔ Kick-Start umschalten. */
         const val ACTION_TOGGLE_RIDE_MODE = "eu.dns3d.epfcockpit.action.TOGGLE_RIDE_MODE"
     }

@@ -1,12 +1,15 @@
 package eu.dns3d.epfcockpit.ui.nav
 
 import androidx.compose.runtime.Composable
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import eu.dns3d.epfcockpit.ui.auth.PinScreen
 import eu.dns3d.epfcockpit.ui.dashboard.DashboardScreen
 import eu.dns3d.epfcockpit.ui.history.HistoryScreen
+import eu.dns3d.epfcockpit.ui.nfc.NfcCloneScreen
 import eu.dns3d.epfcockpit.ui.nfc.NfcReadScreen
 import eu.dns3d.epfcockpit.ui.scan.ScanScreen
 import eu.dns3d.epfcockpit.ui.settings.SettingsScreen
@@ -18,6 +21,11 @@ object Routes {
     const val SETTINGS = "settings"
     const val HISTORY = "history"
     const val NFC = "nfc"
+    /** Klon-Screen ohne Vorbefüllung. */
+    const val NFC_CLONE = "nfc_clone"
+    /** Klon-Screen mit Vorbefüllung der UID, z.B. aus dem zuletzt gelesenen Tag. */
+    const val NFC_CLONE_WITH_UID = "nfc_clone?uid={uid}"
+    fun nfcCloneWithUid(uidHex: String): String = "nfc_clone?uid=$uidHex"
 }
 
 @Composable
@@ -63,13 +71,34 @@ fun AppNav() {
                     }
                 },
                 onOpenNfc = { nav.navigate(Routes.NFC) },
+                onOpenNfcClone = { nav.navigate(Routes.NFC_CLONE) },
             )
         }
         composable(Routes.HISTORY) {
             HistoryScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.NFC) {
-            NfcReadScreen(onBack = { nav.popBackStack() })
+            NfcReadScreen(
+                onBack = { nav.popBackStack() },
+                onCloneUid = { uidHex ->
+                    nav.navigate(Routes.nfcCloneWithUid(uidHex))
+                },
+            )
+        }
+        composable(Routes.NFC_CLONE) {
+            NfcCloneScreen(onBack = { nav.popBackStack() })
+        }
+        composable(
+            route = Routes.NFC_CLONE_WITH_UID,
+            arguments = listOf(navArgument("uid") {
+                type = NavType.StringType
+                defaultValue = ""
+            }),
+        ) { backStack ->
+            NfcCloneScreen(
+                onBack = { nav.popBackStack() },
+                preloadUidHex = backStack.arguments?.getString("uid"),
+            )
         }
     }
 }

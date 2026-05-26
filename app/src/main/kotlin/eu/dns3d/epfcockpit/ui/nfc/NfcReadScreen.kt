@@ -71,7 +71,10 @@ import androidx.compose.ui.unit.dp
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NfcReadScreen(onBack: () -> Unit) {
+fun NfcReadScreen(
+    onBack: () -> Unit,
+    onCloneUid: (String) -> Unit = {},
+) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
     val adapter = remember(context) { NfcAdapter.getDefaultAdapter(context) }
@@ -163,6 +166,7 @@ fun NfcReadScreen(onBack: () -> Unit) {
                         scanning = true
                         attempt++
                     },
+                    onCloneUid = onCloneUid,
                 )
             }
             Spacer(Modifier.height(20.dp))
@@ -219,7 +223,11 @@ private fun NfcDisabledCard(onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun ReadResultView(result: NfcReadResult, onScanAgain: () -> Unit) {
+private fun ReadResultView(
+    result: NfcReadResult,
+    onScanAgain: () -> Unit,
+    onCloneUid: (String) -> Unit,
+) {
     val ctx = LocalContext.current
     SectionCard(title = "UID", leadingIcon = Icons.Filled.Nfc) {
         Text(
@@ -327,6 +335,22 @@ private fun ReadResultView(result: NfcReadResult, onScanAgain: () -> Unit) {
                 }
             }
         }
+    }
+
+    // UID-Klonen ist nur sinnvoll, wenn das Tag eine 7-Byte-UID hat (NTAG21x /
+    // Ultralight) — Magic-NTAG-Pages 0-2 erwarten dieses Layout. Mifare-Classic-
+    // 4-Byte-UIDs koennen wir damit nicht klonen.
+    if (result.uidBytes == 7) {
+        FilledTonalButton(
+            onClick = { onCloneUid(result.uidHex.replace(" ", "")) },
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Filled.ContentCopy, contentDescription = null)
+            Spacer(Modifier.size(6.dp))
+            Text("Diese UID auf Magic-Tag klonen")
+        }
+        Spacer(Modifier.size(8.dp))
     }
 
     Button(

@@ -69,19 +69,36 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
 ### Live-Streaming → Web-Dashboard
 - Optional pusht die App Telemetry per WebSocket an einen kleinen Node-Server
   (siehe [`web/`](web/)) — daraus entstehen drei Browser-Views:
-  Live-Dashboard mit Charts, OBS-Studio-Widget (transparent) und Trip-Historie.
+  Live-Dashboard mit Charts + Live-Karte, OBS-Studio-Widget (transparent)
+  und Trip-Historie mit Routen-Karten.
 - **Live-Dashboard** (`/`): Tile-Grid (Speed/Akku/Leistung/Spannung/Strom/
-  Controller) mit Lucide-Style SVG-Icons + zwei uPlot-Charts (Geschwindigkeit
-  + Leistung). Charts haben Hover-Tooltips mit Zeit + Wert am Cursor-Punkt
+  Controller) mit Lucide-Style SVG-Icons + drei uPlot-Charts (Geschwindigkeit
+  + Leistung + Akku). Charts haben Hover-Tooltips mit Zeit + Wert am Cursor
   und einen Zeitraum-Selector (Live 5m / 15m / 1h / 6h / 24h / 7d) der
   zwischen Live-Buffer und Server-Range-Query (mit Bucket-Downsampling)
-  switcht.
+  switcht. **Mausrad-Zoom**: im Live-Mode schrumpft das Anzeige-Fenster
+  (15..300 s), in History cursor-zentriert zoom auf alle drei Charts
+  synchron; Doppelklick = Reset.
+- **Live-Map** (Leaflet, OSM/Esri-Satellit/OpenTopoMap-Layer-Switcher):
+  zeigt die Roller-Position live mit Marker + Breadcrumb-Trail. Trail wird
+  beim Tab-Open mitten in der Fahrt vom Server nachgeladen
+  (`/api/trips/:id/locations`), also keine Lücke. Smart Auto-Follow
+  pausiert nach User-Interaktion (10 s) und springt zurück sobald der
+  Marker außerhalb des sichtbaren Bereichs landet. Satellit ist Default,
+  vertikaler Zoom-Slider links, Layer-Switcher rechts oben.
+- **Anzeigename-Sync**: vom User in den App-Settings vergebener Roller-Name
+  wird im `hello`-Frame mitgeschickt und serverseitig pro MAC gespeichert.
+  Neues Smartphone holt den Namen automatisch vom Server (`GET
+  /api/scooter-name`) — kein Re-Tippen nötig. Fallback "E-Scooter
+  verbunden" wenn nichts gesetzt.
 - **Trip-History** (`/history`): expandierbare Karten je Fahrt mit
-  Strecke / Dauer / Max / Ø-Speed / Energie und uPlot-Speed-Chart on-Demand.
-  Zeitraum-Chips (Heute / 7 Tage / 30 Tage / Diesen Monat / Dieses Jahr /
-  Alle) plus **Eigener Zeitraum** mit Date-Picker (Einzeltag oder Range
-  Von–Bis). Aggregat-Stats (Anzahl · km · Fahrzeit · Energie) für den
-  aktiven Filter werden live ausgerechnet und in der Filter-Leiste angezeigt.
+  Strecke / Dauer / Max / Ø-Speed / Energie und uPlot-Chart mit zwei
+  Y-Achsen (km/h teal + Akku % amber) on-Demand. Wenn GPS-Waypoints für
+  die Fahrt aufgezeichnet wurden, gibt es zusätzlich eine eingebettete
+  Leaflet-Karte mit der Route (Start/Ende-Marker). Zeitraum-Chips (Heute
+  / 7 Tage / 30 Tage / Diesen Monat / Dieses Jahr / Alle) plus **Eigener
+  Zeitraum** mit Date-Picker. Aggregat-Stats (Anzahl · km · Fahrzeit ·
+  Energie) für den aktiven Filter live in der Filter-Leiste.
 - **OBS-Widget** (`/obs`): minimales transparentes Overlay mit Speed / Akku /
   Watt für Streaming-Captures (`?theme=…&accent=…&compact=…`-Query-Params).
 - **Sprache**: Komplett auf Deutsch übersetzt inkl. korrekter Umlaute, EU-
@@ -98,6 +115,50 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
   (uPlot) → 7d immutable. Damit landen `npm run build`-Updates sofort
   beim nächsten Reload, kein Ctrl+F5 nötig.
 - Server-URL + Token + Enable-Switch in den App-Settings.
+
+### Standortverfolgung (optional, ohne Google-Dienste)
+- Strikt AOSP über `LocationManager.GPS_PROVIDER` (Fallback `NETWORK_PROVIDER`
+  wenn GPS aus ist) — kein FusedLocationProvider, keine Google Play Services.
+  1-Sekunden-Intervall während aktiv.
+- **Trip-Modus**: GPS läuft nur während eine Fahrt aktiv ist (Trip in Room
+  registriert + Roller nicht geparkt). Jeder Sample wird persistent in
+  `trip_locations` gespeichert UND live ans Dashboard gepusht. Route ist
+  hinterher in der Trip-Detail-Karte sichtbar (Leaflet + Start/Ende-Marker).
+- **Idle-Modus** (opt-in zweiter Toggle): wenn aktiviert, läuft GPS auch
+  wenn gerade keine Fahrt läuft — nur live ans Dashboard, ohne DB-Persistenz.
+  Praktisch um die Roller-Position am Live-Map zu sehen ohne extra Akku-
+  Verbrauch durch Trip-Logging.
+- **Provider-Change-Receiver**: wenn der User GPS in den System-Settings
+  nachträglich aktiviert, startet der Listener automatisch nach.
+- **Backfill**: GPS-Waypoints werden mit `trip_end` als `locations[]` an
+  den Server mitgeschickt — selbst wenn der WebSocket während der Fahrt
+  Drops hatte, kommt die komplette Route nach.
+
+### Quick-Tile + Home-Screen-Widget
+- **Quick-Tile** in den Schnelleinstellungen: 1-Klick Entsperren/Sperren.
+  Status (Verbunden? Geparkt?) wird live vom FGS gepusht, Untertext zeigt
+  "Entsperren" / "Sperren" / "nicht verbunden".
+- **Home-Widget** (3×1) mit zwei Buttons: **Entsperren ↔ Sperren** (Label
+  flippt nach Park-Zustand) und **Modus: Stand / Kick** (toggle). Updates
+  bei jedem Telemetrie-Frame, also fast live.
+- Tile- oder Widget-Klick startet den FGS und wartet bis zu 10 s auf
+  BLE-Auth wenn die App grad nicht verbunden ist — funktioniert also auch
+  wenn du nur die Tile/Widget vom Lockscreen tippst.
+
+### NFC-Diagnose + Magic-NTAG215-Klon
+- **Diagnose-Read**: Einstellungen → "NFC-Diagnose" → "Tag scannen". Liest
+  NTAG2xx / Mifare-Ultralight-Tags und zeigt UID + Tech-Liste + kompletten
+  Hex-Dump aller Pages (NTAG213/215/216). Heuristik schlägt den Tag-Typ
+  vor, Copy-Buttons für UID und Hex-Dump. Reader-Mode mit Foreground-
+  Dispatcher, kein Schreiben — rein read-only.
+- **Magic-NTAG215-Klon**: Vom Diagnose-Screen "UID auf Magic-Tag schreiben",
+  schreibt die 7-Byte UID auf einen Magic-NTAG215 (Gen2 / UID-changeable).
+  BCC0/BCC1 werden automatisch berechnet. Normale Werks-NTAGs werfen einen
+  Schreibfehler — nur Magic-Tags mit beschreibbarer Page 0–2 funktionieren.
+- Use-Case: Klone die Original-Roller-NFC-Karte auf eine Reserve-Karte,
+  damit du nicht nur eine einzige hast. (Phone selbst als NFC-Tag
+  emulieren geht hardwarebedingt NICHT — Android-HCE unterstützt nur
+  Type-4-Tags, NTAG215 ist Type-2.)
 - Produktion: nginx-Reverse-Proxy + gehärteter systemd-Service, fertige
   Configs unter [`web/deploy/`](web/deploy/).
 - Details: [`docs/STREAMING.md`](docs/STREAMING.md) (Protokoll, Auth-Modell,
@@ -190,6 +251,9 @@ Release-Build mit dem Debug-Key signiert.
 | `BLUETOOTH_CONNECT`                         | GATT-Connect, Notify-Subscriptions           |
 | `POST_NOTIFICATIONS` (Android 13+)          | Foreground-Service-Notification mit km/h + Akku |
 | `FOREGROUND_SERVICE_CONNECTED_DEVICE` (34+) | FGS-Type für laufende BLE-Verbindung im Hintergrund |
+| `FOREGROUND_SERVICE_LOCATION` (34+)         | FGS-Type für GPS-Tracking während der Fahrt (nur runtime aktiv wenn Location-Permission granted) |
+| `ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION` | Optionales GPS-Tracking pro Trip (opt-in im Settings, AOSP-LocationManager) |
+| `NFC`                                       | NFC-Diagnose-Tag-Read + Magic-NTAG215-Klon (install-time, kein Runtime-Prompt) |
 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`      | Onboarding-Prompt: Akku-Optimierung aus, damit Doze den FGS nicht killt |
 
 ## Was bewusst nicht geht
