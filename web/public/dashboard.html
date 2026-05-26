@@ -173,6 +173,18 @@
                    class="live-map-zoom-slider" />
             <span class="text-xs text-[var(--color-on-surface-dim)]">−</span>
           </div>
+          <!-- Layer-Switcher als Custom-Button-Stack (rechts oben).
+               Dunkel-Glas-Look + Brand-Teal fuer aktive Auswahl. dashboard.js
+               bindet die data-layer-Klicks und switched die Tile-Layer. -->
+          <div id="live-map-layers"
+               class="absolute right-2 top-2 z-[401] bg-[var(--color-surface-1)]/85 backdrop-blur rounded-lg p-1 flex flex-col gap-0.5 select-none text-xs font-medium">
+            <button type="button" data-layer="osm"
+                    class="map-layer-btn px-3 py-1.5 rounded-md text-[var(--color-on-surface-dim)] hover:text-white hover:bg-white/5 transition">Straße</button>
+            <button type="button" data-layer="sat"
+                    class="map-layer-btn px-3 py-1.5 rounded-md text-[var(--color-on-surface-dim)] hover:text-white hover:bg-white/5 transition">Satellit</button>
+            <button type="button" data-layer="topo"
+                    class="map-layer-btn px-3 py-1.5 rounded-md text-[var(--color-on-surface-dim)] hover:text-white hover:bg-white/5 transition">Topo</button>
+          </div>
         </div>
       </div>
     </section>

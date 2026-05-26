@@ -82,6 +82,14 @@
   cursor: pointer;
 }
 
+/* Layer-Switcher der Live-Map. Active-State setzen wir in JS via .is-active —
+   einfacher als data-attribute-Selektoren fuer ein 3-Button-Stack. */
+.map-layer-btn.is-active,
+.map-layer-btn.is-active:hover {
+  background: var(--color-brand-teal);
+  color: #0e1116;
+}
+
 /* Lucide-Style-Icons: Stroke folgt currentColor, runde Joins.
    In Markup einsetzen mit <svg class="icon w-4 h-4">…</svg>; größere
    Varianten einfach via Tailwind-Sizing. */

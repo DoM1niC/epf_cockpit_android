@@ -366,7 +366,10 @@
   // Lazy-init beim ersten location-Frame, vorher bleibt die Section hidden.
   // Trail = letzte N Punkte der aktuellen Fahrt; wechselt der tripId, wird
   // der Trail gepurged damit nicht zwei Fahrten zusammenkleben.
-  const TRAIL_MAX_POINTS = 500;
+  // Trail-Cap nur als Notbremse — eine ueberlange Polyline killt sonst die
+  // Map. Bei 1s-Intervall reichen 20k Punkte fuer ~5.5h Fahrt. Trip-History
+  // ueber dem Cap wird unten beim Backfill auf TRAIL_MAX_POINTS getrimmt.
+  const TRAIL_MAX_POINTS = 20_000;
   // Smart auto-refocus: pausiert nach User-Interaktion, kommt nach IDLE_MS
   // Stille zurück. Ausserdem direkt wieder an, sobald der Marker ausserhalb
   // des sichtbaren Bereichs landet — dann ist die User-Aussicht eh unbrauchbar.
@@ -400,28 +403,48 @@
       scrollWheelZoom: true,
     }).setView([51.16, 10.45], 6); // Default: Mitte-Deutschland bis erste Position
 
-    // Tile-Layer-Set (alle frei, kein API-Key).
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '© OpenStreetMap contributors',
-    });
-    const sat = L.tileLayer(
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      {
+    // Tile-Layer-Set (alle frei, kein API-Key). Satellit default — der User
+    // erkennt seine Strecke darin deutlich besser als auf flacher Strasse.
+    const layers = {
+      osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
-        attribution: 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics',
-      }
-    );
-    const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-      maxZoom: 17,
-      attribution: 'Map data: © OpenStreetMap contributors, SRTM | © OpenTopoMap (CC-BY-SA)',
-    });
-    osm.addTo(liveMap); // Default
-    L.control.layers(
-      { 'Straßen': osm, 'Satellit': sat, 'Topographie': topo },
-      null,
-      { position: 'topright', collapsed: true }
-    ).addTo(liveMap);
+        attribution: '© OpenStreetMap contributors',
+      }),
+      sat: L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        {
+          maxZoom: 19,
+          attribution: 'Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics',
+        }
+      ),
+      topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+        maxZoom: 17,
+        attribution: 'Map data: © OpenStreetMap contributors, SRTM | © OpenTopoMap (CC-BY-SA)',
+      }),
+    };
+    let activeLayerKey = 'sat';
+    layers.sat.addTo(liveMap);
+
+    // Custom Layer-Switcher (HTML in dashboard.html). Default Leaflet-Control
+    // ist visuell zu fremd — wir nutzen unser eigenes Brand-Dark-Theme.
+    const switcherHost = document.getElementById('live-map-layers');
+    function setActiveLayer(key) {
+      if (!layers[key] || key === activeLayerKey) return;
+      liveMap.removeLayer(layers[activeLayerKey]);
+      layers[key].addTo(liveMap);
+      activeLayerKey = key;
+      switcherHost?.querySelectorAll('.map-layer-btn').forEach(b => {
+        b.classList.toggle('is-active', b.dataset.layer === key);
+      });
+    }
+    if (switcherHost) {
+      switcherHost.querySelectorAll('.map-layer-btn').forEach(btn => {
+        btn.addEventListener('click', () => setActiveLayer(btn.dataset.layer));
+      });
+      // Default markieren
+      switcherHost.querySelector(`.map-layer-btn[data-layer="${activeLayerKey}"]`)
+        ?.classList.add('is-active');
+    }
 
     liveTrail = L.polyline([], { color: '#4DD0E1', weight: 4, opacity: 0.85 }).addTo(liveMap);
 
@@ -453,6 +476,33 @@
     });
   }
 
+  // Holt die kompletten Waypoints eines Trips vom Server und prependet sie in
+  // den Live-Trail — wichtig wenn der Browser-Tab spaeter geoeffnet wird oder
+  // einen Hard-Refresh hatte, sonst sieht der User nur die letzten paar
+  // Sekunden statt der ganzen Fahrt.
+  async function backfillTrailFromServer(tripId) {
+    try {
+      const r = await window.EpfAuth.fetchAuthed(
+        `/api/trips/${encodeURIComponent(tripId)}/locations`
+      );
+      if (!r.ok) return;
+      const { points } = await r.json();
+      if (!points || points.length === 0) return;
+      // Trip koennte sich zwischenzeitlich geaendert haben (User hat eine
+      // neue Fahrt gestartet waehrend wir noch fetchten) — ignorieren.
+      if (tripId !== liveTripId) return;
+      const histPts = points.map(p => [p.lat, p.lon]);
+      // Backfill vorne, Live-Punkte (waehrend des Fetches reingekommen) hinten.
+      liveTrailPts = histPts.concat(liveTrailPts);
+      if (liveTrailPts.length > TRAIL_MAX_POINTS) {
+        liveTrailPts = liveTrailPts.slice(-TRAIL_MAX_POINTS);
+      }
+      liveTrail.setLatLngs(liveTrailPts);
+    } catch (err) {
+      console.warn('[live] trail backfill failed:', err);
+    }
+  }
+
   function applyLocation(msg) {
     if (typeof msg.lat !== 'number' || typeof msg.lon !== 'number') return;
     initLiveMap();
@@ -464,6 +514,9 @@
       liveTripId = msg.tripId ?? null;
       liveTrailPts = [];
       liveTrail.setLatLngs([]);
+      // Neuer Trip aktiv → vorhandene Strecke aus der DB holen, damit der
+      // Tab-Open mitten in einer Fahrt die bisherige Route sofort zeigt.
+      if (liveTripId) backfillTrailFromServer(liveTripId);
     }
 
     const ll = [msg.lat, msg.lon];
