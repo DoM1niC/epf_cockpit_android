@@ -31,6 +31,12 @@
          eingefroren wird, bitten wir den User aktiv um Akku-Whitelist. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- NFC nur fuer das Diagnose-Tool (NfcReadScreen) — lesen, niemals
+         schreiben. required=false: App laeuft auch auf Geraeten ohne NFC,
+         das Feature ist dann halt nicht sichtbar/nutzbar. -->
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.nfc" android:required="false" />
+
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
 
     <application
@@ -68,5 +74,32 @@
             android:name=".service.EpfConnectionService"
             android:foregroundServiceType="connectedDevice|location"
             android:exported="false" />
+
+        <!-- Quick-Tile: Schnelleinstellungs-Kachel "E-Scooter entsperren".
+             Bind-Permission ist System-Pflicht damit nur SystemUI den
+             Tile-Service starten darf. -->
+        <service
+            android:name=".widget.UnlockTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_notif_scooter"
+            android:label="@string/tile_unlock_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- Home-Screen-Widget: Entsperren + Modus-Toggle. -->
+        <receiver
+            android:name=".widget.UnlockWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_unlock_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/unlock_widget_info" />
+        </receiver>
     </application>
 </manifest>

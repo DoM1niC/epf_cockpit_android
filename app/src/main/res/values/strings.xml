@@ -42,4 +42,8 @@
     <string name="nav_dashboard">Dashboard</string>
     <string name="nav_history">Fahrten</string>
     <string name="nav_settings">Einstellungen</string>
+
+    <string name="widget_unlock_label">E-Scooter Steuerung</string>
+    <string name="widget_unlock_description">Entsperren + Stand-Stop/Kick-Start umschalten</string>
+    <string name="tile_unlock_label">E-Scooter entsperren</string>
 </resources>

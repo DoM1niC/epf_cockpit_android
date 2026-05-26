@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -72,6 +73,7 @@ import kotlin.math.roundToInt
 fun SettingsScreen(
     onBack: () -> Unit,
     onForget: () -> Unit,
+    onOpenNfc: () -> Unit = {},
     vm: SettingsViewModel = hiltViewModel(),
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -383,6 +385,23 @@ fun SettingsScreen(
                     Spacer(Modifier.height(8.dp))
                     Text(it, color = MaterialTheme.colorScheme.primary)
                 }
+            }
+
+            SectionCard("NFC-Diagnose", leadingIcon = Icons.Filled.Nfc) {
+                Text(
+                    "Liest NTAG2xx / Mifare-Ultralight-Tags aus und zeigt UID, " +
+                        "unterstützte Technologien und kompletten Speicher-Dump. " +
+                        "Nützlich um die Original-Roller-NFC-Karte zu analysieren " +
+                        "bevor ein Klon erstellt wird.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = onOpenNfc,
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Tag scannen") }
             }
 
             SectionCard("Über die App") {

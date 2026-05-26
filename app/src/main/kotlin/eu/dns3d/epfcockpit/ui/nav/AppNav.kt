@@ -7,6 +7,7 @@ import androidx.navigation.compose.rememberNavController
 import eu.dns3d.epfcockpit.ui.auth.PinScreen
 import eu.dns3d.epfcockpit.ui.dashboard.DashboardScreen
 import eu.dns3d.epfcockpit.ui.history.HistoryScreen
+import eu.dns3d.epfcockpit.ui.nfc.NfcReadScreen
 import eu.dns3d.epfcockpit.ui.scan.ScanScreen
 import eu.dns3d.epfcockpit.ui.settings.SettingsScreen
 
@@ -16,6 +17,7 @@ object Routes {
     const val DASHBOARD = "dashboard"
     const val SETTINGS = "settings"
     const val HISTORY = "history"
+    const val NFC = "nfc"
 }
 
 @Composable
@@ -60,10 +62,14 @@ fun AppNav() {
                         popUpTo(Routes.DASHBOARD) { inclusive = true }
                     }
                 },
+                onOpenNfc = { nav.navigate(Routes.NFC) },
             )
         }
         composable(Routes.HISTORY) {
             HistoryScreen(onBack = { nav.popBackStack() })
+        }
+        composable(Routes.NFC) {
+            NfcReadScreen(onBack = { nav.popBackStack() })
         }
     }
 }

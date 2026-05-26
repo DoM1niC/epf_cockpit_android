@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:padding="6dp"
+    android:background="@drawable/widget_bg">
+
+    <Button
+        android:id="@+id/btn_unlock"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginEnd="4dp"
+        android:text="Entsperren"
+        android:textColor="#0e1116"
+        android:background="@drawable/widget_btn_primary" />
+
+    <Button
+        android:id="@+id/btn_mode"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="4dp"
+        android:text="Modus"
+        android:textColor="#e6e8ee"
+        android:background="@drawable/widget_btn_secondary" />
+</LinearLayout>

@@ -24,7 +24,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import kotlin.system.exitProcess
 
@@ -45,6 +47,7 @@ import kotlin.system.exitProcess
 class EpfConnectionService : Service() {
 
     @Inject lateinit var ble: BleRepository
+    @Inject lateinit var settings: eu.dns3d.epfcockpit.data.SettingsStore
 
     // Eager-Inject damit der Singleton initialisiert wird sobald der FGS
     // läuft — sonst wäre der LocationCollector erst beim ersten Hilt-Lookup
@@ -80,12 +83,44 @@ class EpfConnectionService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Quick-Tile / Widget-Actions: warten ggf. auf BLE-Connect, dann senden.
+        when (intent?.action) {
+            ACTION_UNLOCK -> handleAction { ble.setParking(false) }
+            ACTION_TOGGLE_RIDE_MODE -> scope.launch {
+                val current = settings.flow.first().rideModeStand
+                val next = !current
+                handleAction { ble.setRideMode(next) }
+                settings.setRideModeStand(next)
+            }
+        }
         // START_NOT_STICKY: nach Process-Death soll Android den Service NICHT
         // automatisch wieder hochziehen — sonst kommt die Notification nach
         // `exitProcess` aus onTaskRemoved sofort als "Cockpit getrennt" zurück.
         // Trade-off: bei rare OOM-Kill ist der Service auch weg. FGS sind
         // praktisch nie OOM-Opfer, der Trade-off ist es wert.
         return START_NOT_STICKY
+    }
+
+    /**
+     * Sendet einen BLE-Befehl. Wenn die Verbindung gerade nicht authentifiziert
+     * ist, wartet bis zu 10s auf den Connected+Auth-Zustand — sodass ein
+     * Widget-Klick direkt nach App-Start (Auto-Connect noch laufend) trotzdem
+     * funktioniert. Bei Timeout: User sieht den Fehlversuch in der Notif.
+     */
+    private fun handleAction(block: () -> Unit) {
+        scope.launch {
+            val c = ble.connection.value
+            if (c is ConnectionState.Connected && c.authenticated) {
+                block()
+                return@launch
+            }
+            updateNotification("E-Scooter verbindet…", "Befehl wartet auf Verbindung")
+            val ready = withTimeoutOrNull(10_000) {
+                ble.connection.first { it is ConnectionState.Connected && it.authenticated }
+            }
+            if (ready != null) block()
+            else updateNotification("E-Scooter getrennt", "Befehl abgebrochen — keine Verbindung")
+        }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -174,8 +209,12 @@ class EpfConnectionService : Service() {
         }
     }
 
-    private companion object {
-        const val TAG = "EpfConnectionService"
-        const val NOTIF_ID = 4711
+    companion object {
+        private const val TAG = "EpfConnectionService"
+        private const val NOTIF_ID = 4711
+        /** Quick-Tile/Widget-Action: Roller entsperren (Park-Bremse loesen). */
+        const val ACTION_UNLOCK = "eu.dns3d.epfcockpit.action.UNLOCK"
+        /** Widget-Action: Stand-Stop ↔ Kick-Start umschalten. */
+        const val ACTION_TOGGLE_RIDE_MODE = "eu.dns3d.epfcockpit.action.TOGGLE_RIDE_MODE"
     }
 }
