@@ -503,26 +503,44 @@
     }
   }
 
+  // Billige Distanz-Naeherung in Meter — Haversine ist Overkill fuer die
+  // kurzen Distanzen zwischen aufeinanderfolgenden GPS-Samples. lat ist
+  // 111km/Grad, lon je nach Breitengrad weniger.
+  function distMeters(a, b) {
+    const dLat = (b[0] - a[0]) * 111_000;
+    const dLon = (b[1] - a[1]) * 111_000 * Math.cos(a[0] * Math.PI / 180);
+    return Math.hypot(dLat, dLon);
+  }
+  // Im Idle nur Punkte mit > 3m Bewegung anhaengen — sonst zappelt der Trail
+  // wegen GPS-Jitter im Stand. Bei aktivem Trip wird gar nicht gefiltert,
+  // damit kurze Stop-and-Go-Phasen auch sichtbar bleiben.
+  const IDLE_MIN_MOVE_M = 3;
+
   function applyLocation(msg) {
     if (typeof msg.lat !== 'number' || typeof msg.lon !== 'number') return;
     initLiveMap();
     if (!liveMap) return; // Leaflet nicht geladen
 
-    // Trip-Wechsel oder Trip→Idle? → Trail purgen, sonst klebt eine alte
-    // Fahrt am neuen Marker. msg.tripId == null heisst Idle-Fix.
-    if (msg.tripId !== liveTripId) {
-      liveTripId = msg.tripId ?? null;
+    // Echter Trip-Wechsel (z.B. epf_2 → epf_3): Trail purgen + Backfill.
+    // Trip↔Idle ist KEIN Purge — sonst verschwindet die soeben gefahrene
+    // Strecke sobald der TripCoordinator den Trip beendet (Parking an).
+    const wasTrip = !!liveTripId;
+    const newTrip = !!msg.tripId;
+    if (newTrip && msg.tripId !== liveTripId) {
+      liveTripId = msg.tripId;
       liveTrailPts = [];
       liveTrail.setLatLngs([]);
-      // Neuer Trip aktiv → vorhandene Strecke aus der DB holen, damit der
-      // Tab-Open mitten in einer Fahrt die bisherige Route sofort zeigt.
-      if (liveTripId) backfillTrailFromServer(liveTripId);
+      backfillTrailFromServer(liveTripId);
+    } else if (!newTrip && wasTrip) {
+      // Trip ist soeben geendet → Trail-Snapshot stehen lassen, aber liveTripId
+      // resetten damit der naechste Trip-Start einen sauberen Backfill triggert.
+      liveTripId = null;
     }
 
     const ll = [msg.lat, msg.lon];
-    // Im Idle nur Marker bewegen, kein Trail-Append — sonst fuellt sich der
-    // Trail mit GPS-Jitter waehrend der Roller steht.
-    if (liveTripId) {
+    const last = liveTrailPts[liveTrailPts.length - 1];
+    const moved = !last || distMeters(last, ll) >= (liveTripId ? 0 : IDLE_MIN_MOVE_M);
+    if (moved) {
       liveTrailPts.push(ll);
       if (liveTrailPts.length > TRAIL_MAX_POINTS) liveTrailPts.shift();
       liveTrail.setLatLngs(liveTrailPts);
@@ -550,7 +568,9 @@
     const meta = document.getElementById('live-map-meta');
     if (meta) {
       const acc = msg.accuracyM != null ? ` · ±${msg.accuracyM.toFixed(0)}m` : '';
-      const status = liveTripId ? `${liveTrailPts.length} Pkt` : 'Idle';
+      const status = liveTripId
+        ? `${liveTrailPts.length} Pkt`
+        : (liveTrailPts.length > 0 ? `${liveTrailPts.length} Pkt · Idle` : 'Idle');
       meta.textContent = `${status}${acc}`;
     }
   }

@@ -160,43 +160,27 @@ class LocationCollector @Inject constructor(
         val gpsOn = runCatching {
             locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
         }.getOrDefault(false)
-        // NETWORK_PROVIDER ist auf Geraeten ohne Google-Dienste oft nicht
-        // verfuegbar (kein /com.google.android.location-Service). Wir probieren
-        // ihn trotzdem — funktioniert wenn der Hersteller microG oder einen
-        // eigenen Network-Location-Provider beilegt. Sonst nur GPS.
-        val netOn = runCatching {
+        // NETWORK NUR als Fallback wenn GPS nicht verfuegbar — beide parallel
+        // sorgt fuer einen springenden Marker, weil Network-Fixes (10-50m
+        // Genauigkeit) regelmaessig die praezisen GPS-Fixes ueberschreiben.
+        val netOn = if (!gpsOn) runCatching {
             locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-        }.getOrDefault(false)
+        }.getOrDefault(false) else false
         if (!gpsOn && !netOn) {
-            Log.w(TAG, "skip start: no location provider enabled (gps=$gpsOn net=$netOn)")
+            Log.w(TAG, "skip start: no location provider enabled")
             return
         }
-        var registered = false
-        if (gpsOn) {
-            try {
-                locationManager.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER, INTERVAL_MS, MIN_DISTANCE_M,
-                    listener, Looper.getMainLooper(),
-                )
-                registered = true
-                Log.i(TAG, "GPS provider listener started (interval=${INTERVAL_MS}ms)")
-            } catch (t: Throwable) {
-                Log.w(TAG, "GPS requestLocationUpdates failed: ${t.message}")
-            }
+        val provider = if (gpsOn) LocationManager.GPS_PROVIDER else LocationManager.NETWORK_PROVIDER
+        try {
+            locationManager.requestLocationUpdates(
+                provider, INTERVAL_MS, MIN_DISTANCE_M,
+                listener, Looper.getMainLooper(),
+            )
+            listening = true
+            Log.i(TAG, "$provider listener started (interval=${INTERVAL_MS}ms)")
+        } catch (t: Throwable) {
+            Log.w(TAG, "requestLocationUpdates ($provider) failed: ${t.message}")
         }
-        if (netOn) {
-            try {
-                locationManager.requestLocationUpdates(
-                    LocationManager.NETWORK_PROVIDER, INTERVAL_MS, MIN_DISTANCE_M,
-                    listener, Looper.getMainLooper(),
-                )
-                registered = true
-                Log.i(TAG, "NETWORK provider listener started (interval=${INTERVAL_MS}ms)")
-            } catch (t: Throwable) {
-                Log.w(TAG, "NETWORK requestLocationUpdates failed: ${t.message}")
-            }
-        }
-        listening = registered
     }
 
     private fun stop() {
