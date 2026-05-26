@@ -114,14 +114,18 @@
         ready(u) {
           u.over.addEventListener('wheel', (e) => {
             e.preventDefault();
-            const left = u.cursor.left;
-            if (left == null || left < 0) return;
+            // Wenn der Cursor noch nicht ueber dem Chart war (cursor.left
+            // == null oder negativ), faellt der Anker auf die Chart-Mitte
+            // zurueck — sonst tut Wheel-Zoom nichts beim ersten Spin.
+            const widthCss = u.bbox.width / window.devicePixelRatio;
+            let left = u.cursor.left;
+            if (left == null || left < 0) left = widthCss / 2;
             const xVal = u.posToVal(left, 'x');
             const { min, max } = u.scales.x;
             const oxRange = max - min;
             // Negative deltaY = wheel up = zoom in (kleinere Range).
             const nxRange = e.deltaY < 0 ? oxRange * factor : oxRange / factor;
-            const leftPct = left / u.bbox.width * window.devicePixelRatio;
+            const leftPct = left / widthCss;
             const nxMin = xVal - leftPct * nxRange;
             const nxMax = nxMin + nxRange;
             u.batch(() => u.setScale('x', { min: nxMin, max: nxMax }));

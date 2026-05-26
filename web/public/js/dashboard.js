@@ -85,8 +85,6 @@
         ready(u) {
           u.over.addEventListener('wheel', (e) => {
             e.preventDefault();
-            const left = u.cursor.left;
-            if (left == null || left < 0) return;
 
             if (isLive()) {
               const oldS = liveWindowSeconds;
@@ -101,15 +99,27 @@
               return;
             }
 
-            // History: cursor-zentrierter Zoom
+            // History: cursor-zentrierter Zoom. frozenFrom/To muessen mit-
+            // wandern, sonst zieht unsere range()-Funktion den setScale
+            // sofort wieder auf den alten Range zurueck. Alle drei Charts
+            // werden synchron gezoomt — gleiche x-Achse, alles andere
+            // wirkt unstimmig. Fallback auf Chart-Mitte falls der Cursor
+            // noch nie ueber dem Chart war.
+            const widthCss = u.bbox.width / window.devicePixelRatio;
+            let left = u.cursor.left;
+            if (left == null || left < 0) left = widthCss / 2;
             const xVal = u.posToVal(left, 'x');
             const { min, max } = u.scales.x;
             const oxRange = max - min;
             const nxRange = e.deltaY < 0 ? oxRange * factor : oxRange / factor;
-            const leftPct = left / u.bbox.width * window.devicePixelRatio;
+            const leftPct = left / widthCss;
             const nxMin = xVal - leftPct * nxRange;
             const nxMax = nxMin + nxRange;
-            u.batch(() => u.setScale('x', { min: nxMin, max: nxMax }));
+            frozenFrom = nxMin * 1000;
+            frozenTo   = nxMax * 1000;
+            chartSpeed && chartSpeed.setScale('x', { min: nxMin, max: nxMax });
+            chartPower && chartPower.setScale('x', { min: nxMin, max: nxMax });
+            chartBatt  && chartBatt.setScale('x',  { min: nxMin, max: nxMax });
           }, { passive: false });
 
           // Doppelklick im Live-Modus = Fenster auf Default (5 min) zurück.
@@ -266,10 +276,14 @@
       // sonst wirkt die alte Wheel-Position aus der vorigen Live-Session
       // verwirrend (z.B. "Live · 30s" nach Auto-Switch).
       liveWindowSeconds = DEFAULT_LIVE_WINDOW_S;
-      setRangeStatus('Live');
       chartSpeed.setData([buf.ts, buf.speed]);
       chartPower.setData([buf.ts, buf.power]);
       chartBatt.setData([buf.ts, buf.batt]);
+      // x-Scale explizit auf Live-Fenster zuruecksetzen. Sonst bleibt die
+      // per setScale gesetzte History-Range "user-set" und der Wheel-Zoom
+      // im Live-Mode hat keinen sichtbaren Effekt (range() wird beim setData
+      // nicht mehr getriggert nachdem setScale einmal explizit lief).
+      syncLiveWindow();
       return;
     }
 
