@@ -10,8 +10,8 @@ import eu.dns3d.epfcockpit.data.SettingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -67,12 +67,14 @@ class DashboardViewModel @Inject constructor(
     private var initialParkingSeeded = false
 
     init {
-        // Seed last ride-mode from persistent storage so the segmented
-        // button doesn't snap back to "Stand" on every app start.
+        // Ride-Mode live aus dem SettingsStore beobachten — so spiegelt der
+        // Segmented Button auch Aenderungen vom Widget / Quick-Tile / einem
+        // zweiten Phone wider, nicht nur den Initialwert beim App-Start.
         viewModelScope.launch {
-            val snap = settings.flow.first()
-            val mode = if (snap.rideModeStand) RideMode.Stand else RideMode.Kickstart
-            _state.update { it.copy(rideMode = mode) }
+            settings.flow.map { it.rideModeStand }.distinctUntilChanged().collect { stand ->
+                val mode = if (stand) RideMode.Stand else RideMode.Kickstart
+                _state.update { it.copy(rideMode = mode) }
+            }
         }
         viewModelScope.launch {
             ble.telemetry.filterNotNull().collect { telemetry ->
@@ -83,6 +85,16 @@ class DashboardViewModel @Inject constructor(
                     } else it.parking
                     it.copy(telemetry = telemetry, parking = parking)
                 }
+            }
+        }
+        // Externe Park-Trigger (Widget, Quick-Tile, Service-Action) reflektieren
+        // damit der Parking-Switch im Dashboard mitwandert. Wir warten nicht
+        // auf das Telemetry-Bit weil das durch Mode-Frames mit-flippt und der
+        // Switch sonst springt — der zuletzt ausgeloeste Befehl ist die
+        // sauberste Quelle.
+        viewModelScope.launch {
+            ble.lastIssuedParking.filterNotNull().collect { issued ->
+                _state.update { it.copy(parking = issued) }
             }
         }
         // Trip-Recording wandert in TripCoordinator (@Singleton) — überlebt

@@ -82,6 +82,17 @@ class BleRepository @Inject constructor(
     val voiceOff: StateFlow<Boolean?> = _voiceOff.asStateFlow()
 
     /**
+     * Letzter explizit per [setParking] ausgeloester Park-Zustand. Wird auch
+     * vom Widget / Quick-Tile / Service gesetzt — damit der Dashboard-VM
+     * beim Tap aus dem Widget den neuen Wert in der UI reflektiert (sonst
+     * bliebe der lokale parking-Switch im Dashboard auf dem alten Wert
+     * stehen, weil das Telemetrie-Bit fuer Park nicht zuverlaessig spiegelt).
+     * Null bis der erste setParking()-Call lief.
+     */
+    private val _lastIssuedParking = MutableStateFlow<Boolean?>(null)
+    val lastIssuedParking: StateFlow<Boolean?> = _lastIssuedParking.asStateFlow()
+
+    /**
      * Live-Cache der User-Max-Speed aus den Settings. Wird in JEDES `0xAF`-
      * Statusframe geschrieben (parking/mode/setMaxSpeed), damit ein Park-Toggle
      * den g3-Wert nicht zurück auf 20 km/h zwingt.
@@ -463,6 +474,7 @@ class BleRepository @Inject constructor(
         val g3 = cachedMaxSpeedKmh
         val frame = if (on) ControlFrames.parkingOn(g3) else ControlFrames.parkingOff(g3)
         manager.writeLowFrame(frame, label = if (on) "park-on" else "park-off")
+        _lastIssuedParking.value = on
     }
 
     /**
