@@ -24,23 +24,19 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Sammelt optionale GPS-Waypoints während einer Fahrt — strikt AOSP
- * ([LocationManager.GPS_PROVIDER], kein FusedLocationProvider, keine
- * Google-Play-Services), 5-Sekunden-Intervall.
+ * Sammelt optionale GPS-Waypoints — strikt AOSP ([LocationManager.GPS_PROVIDER],
+ * kein FusedLocationProvider, keine Google-Play-Services), 1-Sekunden-Intervall.
  *
- * Gating: GPS-Updates laufen NUR wenn alle drei Bedingungen erfüllt sind:
- *   - User hat in den Settings `trackLocation = true` gesetzt
- *   - Es läuft gerade ein Trip ([TripCoordinator.activeTripRowId] != null)
- *   - Der Roller ist nicht geparkt (`telemetry.parking == false`)
+ * Gating:
+ *   - User hat in den Settings `trackLocation = true` gesetzt — Pflicht.
+ *   - Während einer Fahrt (Trip aktiv + nicht geparkt): Sample wird persistent
+ *     in Room geschrieben UND live an den Server geschickt.
+ *   - Im Idle (kein Trip oder geparkt): nur wenn zusätzlich `trackLocationIdle
+ *     = true`; Sample wird ausschließlich live geschickt (Streaming-Snapshot
+ *     für die Dashboard-Karte), kein Room-Insert.
  *
- * Sobald eine der Bedingungen wegfällt, wird der Listener wieder abgemeldet.
- * Damit kein Akku-Drain wenn die App offen ist aber niemand fährt.
- *
- * Jeder Sample wird in zwei Wegen versendet:
- *   - persistent: Room (`TripDao.insertLocation`) mit der aktiven Trip-Row-ID
- *   - live: WebSocket (`TelemetryStreamer.sendLocation`) — der Streamer ist
- *     no-op wenn der Socket nicht gerade connected ist, also keine Pufferung
- *     nötig (das macht der Backfill via `trip_end.locations`).
+ * Sobald `trackLocation` aus ist oder im Idle ohne Idle-Toggle, wird der
+ * Listener wieder abgemeldet — kein Akku-Drain.
  *
  * Wird vom [eu.dns3d.epfcockpit.service.EpfConnectionService] eagerly
  * injected damit der Listener auch ohne offene UI scharf geschaltet ist.
@@ -62,13 +58,13 @@ class LocationCollector @Inject constructor(
     /** Wird auf true gesetzt sobald wir requestLocationUpdates aufgerufen haben. */
     @Volatile private var listening: Boolean = false
 
-    /** Die Row-ID des Trips, an den die nächsten Locations gehängt werden. */
+    /** Row-ID des aktiven Trips; null bedeutet "kein Trip läuft" (Idle-Modus). */
     @Volatile private var currentTripRowId: Long? = null
 
     private val listener = object : LocationListener {
         override fun onLocationChanged(loc: Location) {
-            val rowId = currentTripRowId ?: return
-            scope.launch { handleLocation(rowId, loc) }
+            // currentTripRowId darf null sein — im Idle senden wir nur live.
+            scope.launch { handleLocation(currentTripRowId, loc) }
         }
 
         // Pre-API-29-Callbacks — auf API 31+ werden sie nicht aufgerufen, aber
@@ -81,27 +77,25 @@ class LocationCollector @Inject constructor(
 
     init {
         scope.launch {
-            // Drei Quellen: Settings.trackLocation, aktive Trip-Row-ID, parking-Flag.
-            // distinctUntilChanged + Triple-Reduce → wir starten/stoppen nur
-            // wenn sich der effektive Gate-Zustand wirklich geändert hat.
+            // Vier Quellen: trackLocation, trackLocationIdle, aktive Trip-Row-ID,
+            // parking-Flag. distinctUntilChanged auf das errechnete Gate-Tupel,
+            // sodass wir Start/Stop nur fahren wenn sich was Effektives ändert.
             combine(
                 settings.flow,
                 tripCoordinator.activeTripRowId,
                 ble.telemetry,
             ) { snap, tripRowId, tele ->
                 val parked = tele?.parking == true
-                Triple(snap.trackLocation, tripRowId, parked)
+                val tripActive = tripRowId != null && !parked
+                val shouldRun = snap.trackLocation && (tripActive || snap.trackLocationIdle)
+                // Im Idle-Modus (kein Trip, oder geparkt) bleibt die Row-ID
+                // null — handleLocation überspringt dann den Room-Insert.
+                Pair(shouldRun, if (tripActive) tripRowId else null)
             }
                 .distinctUntilChanged()
-                .collect { (track, tripRowId, parked) ->
-                    val shouldRun = track && tripRowId != null && !parked
-                    if (shouldRun) {
-                        currentTripRowId = tripRowId
-                        start()
-                    } else {
-                        currentTripRowId = null
-                        stop()
-                    }
+                .collect { (shouldRun, tripRowId) ->
+                    currentTripRowId = tripRowId
+                    if (shouldRun) start() else stop()
                 }
         }
     }
@@ -144,30 +138,32 @@ class LocationCollector @Inject constructor(
         }
     }
 
-    private suspend fun handleLocation(tripRowId: Long, loc: Location) {
+    private suspend fun handleLocation(tripRowId: Long?, loc: Location) {
         val ts = if (loc.time > 0) loc.time else System.currentTimeMillis()
         val accuracy = if (loc.hasAccuracy()) loc.accuracy else null
         val speed = if (loc.hasSpeed()) loc.speed else null
 
-        // 1) Persistieren — auch wenn der Server gerade nicht erreichbar ist,
-        //    fischt der TripSyncer / das trip_end-Backfill diese Waypoints
-        //    später ab.
-        runCatching {
-            tripDao.insertLocation(
-                TripLocation(
-                    tripRowId = tripRowId,
-                    ts = ts,
-                    lat = loc.latitude,
-                    lon = loc.longitude,
-                    accuracyM = accuracy,
-                    speedMps = speed,
+        // 1) Persistieren NUR während eines aktiven Trips. Im Idle wäre der
+        //    Sample heimatlos (keine Trip-Row, kein Backfill-Mechanismus).
+        if (tripRowId != null) {
+            runCatching {
+                tripDao.insertLocation(
+                    TripLocation(
+                        tripRowId = tripRowId,
+                        ts = ts,
+                        lat = loc.latitude,
+                        lon = loc.longitude,
+                        accuracyM = accuracy,
+                        speedMps = speed,
+                    )
                 )
-            )
-        }.onFailure { Log.w(TAG, "insertLocation failed: ${it.message}") }
+            }.onFailure { Log.w(TAG, "insertLocation failed: ${it.message}") }
+        }
 
         // 2) Live an den Server pushen — Streamer ist no-op wenn nicht
-        //    connected, also keine extra Logik nötig.
-        val tripId = TripCoordinator.LOCAL_ID_PREFIX + tripRowId
+        //    connected. tripId = null signalisiert dem Dashboard "Idle-Fix"
+        //    (Marker bewegen, aber keinen Trail anhängen).
+        val tripId = tripRowId?.let { TripCoordinator.LOCAL_ID_PREFIX + it }
         streamer.sendLocation(
             tripId = tripId,
             ts = ts,
@@ -185,7 +181,7 @@ class LocationCollector @Inject constructor(
 
     private companion object {
         const val TAG = "LocationCollector"
-        const val INTERVAL_MS: Long = 5_000L
+        const val INTERVAL_MS: Long = 1_000L
         const val MIN_DISTANCE_M: Float = 0f
     }
 }

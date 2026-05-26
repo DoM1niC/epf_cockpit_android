@@ -48,6 +48,14 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
          *  der User es in den Settings einschaltet UND ACCESS_FINE_LOCATION
          *  genehmigt hat. Siehe [eu.dns3d.epfcockpit.data.LocationCollector]. */
         val trackLocation: Boolean,
+        /** Wenn true, sendet die App auch im Idle (keine Fahrt, oder geparkt)
+         *  GPS-Punkte an das Dashboard — nur live, nicht in Room. Nur wirksam
+         *  wenn [trackLocation] ebenfalls true ist. */
+        val trackLocationIdle: Boolean,
+        /** Vom User vergebener Anzeigename des Rollers (z.B. "Pulse Plus von Tom").
+         *  Wird im Hello/State-Frame ans Dashboard geschickt — null = Dashboard
+         *  zeigt "E-Scooter" als Fallback. */
+        val scooterFriendlyName: String?,
     )
 
     val flow: Flow<Snapshot> = context.dataStore.data.map { p ->
@@ -67,6 +75,8 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             streamingToken = p[KEY_STREAMING_TOKEN]?.takeIf { it.isNotBlank() },
             startupPromptDone = p[KEY_STARTUP_PROMPT_DONE] ?: false,
             trackLocation = p[KEY_TRACK_LOCATION] ?: false,
+            trackLocationIdle = p[KEY_TRACK_LOCATION_IDLE] ?: false,
+            scooterFriendlyName = p[KEY_SCOOTER_FRIENDLY_NAME]?.takeIf { it.isNotBlank() },
         )
     }
 
@@ -140,6 +150,18 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         context.dataStore.edit { p -> p[KEY_TRACK_LOCATION] = enabled }
     }
 
+    suspend fun setTrackLocationIdle(enabled: Boolean) {
+        context.dataStore.edit { p -> p[KEY_TRACK_LOCATION_IDLE] = enabled }
+    }
+
+    suspend fun setScooterFriendlyName(name: String?) {
+        context.dataStore.edit { p ->
+            val trimmed = name?.trim().orEmpty()
+            if (trimmed.isEmpty()) p.remove(KEY_SCOOTER_FRIENDLY_NAME)
+            else p[KEY_SCOOTER_FRIENDLY_NAME] = trimmed
+        }
+    }
+
     private companion object {
         val KEY_ADDRESS = stringPreferencesKey("scooter_address")
         val KEY_NAME = stringPreferencesKey("scooter_name")
@@ -155,5 +177,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val KEY_STREAMING_TOKEN = stringPreferencesKey("streaming_token")
         val KEY_STARTUP_PROMPT_DONE = booleanPreferencesKey("startup_prompt_done")
         val KEY_TRACK_LOCATION = booleanPreferencesKey("track_location")
+        val KEY_TRACK_LOCATION_IDLE = booleanPreferencesKey("track_location_idle")
+        val KEY_SCOOTER_FRIENDLY_NAME = stringPreferencesKey("scooter_friendly_name")
     }
 }

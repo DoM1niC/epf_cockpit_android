@@ -78,14 +78,15 @@ sealed interface StreamMessage {
     ) : StreamMessage
 
     /**
-     * Live-Waypoint während der Fahrt. Wird vom [eu.dns3d.epfcockpit.data.LocationCollector]
-     * pro GPS-Sample geschickt (~5s-Intervall). Der Server validiert die
-     * Frame gegen INGEST_TOKEN wie jedes andere Ingest-Event auch.
+     * Live-Waypoint vom [eu.dns3d.epfcockpit.data.LocationCollector]
+     * (1s-Intervall). `tripId == null` heißt Idle-Fix (nur Dashboard-Marker,
+     * kein Trip-Persist). Der Server validiert die Frame gegen INGEST_TOKEN
+     * wie jedes andere Ingest-Event auch.
      */
     @Serializable
     @SerialName("location")
     data class Location(
-        val tripId: String,
+        val tripId: String?,
         val ts: Long,
         val lat: Double,
         val lon: Double,

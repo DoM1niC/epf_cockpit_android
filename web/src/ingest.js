@@ -82,38 +82,25 @@ wss.on('connection', (ws, req) => {
       }
 
       case 'location': {
-        // GPS-Waypoint live während der Fahrt. Wir tag-en auf den jeweils
-        // aktuellen Trip wenn der Client keinen tripId mitschickt — analog
-        // zu telemetry.
-        const tripId = msg.tripId ?? getCurrentTripId();
-        if (!tripId || typeof msg.lat !== 'number' || typeof msg.lon !== 'number') {
-          // Kein Trip aktiv oder Koordinaten fehlen — verwerfen statt zu
-          // raten. Trip_end-Backfill räumt das später nach.
-          break;
-        }
+        // GPS-Waypoint live. Wenn der Client keine tripId mitschickt, fallen
+        // wir auf den aktuell aktiven Trip zurueck. Beides null → Idle-Fix:
+        // nur broadcasten (Dashboard-Marker), kein DB-Insert weil es keinen
+        // Trip-Bucket fuer den Punkt gaebe.
+        if (typeof msg.lat !== 'number' || typeof msg.lon !== 'number') break;
+        const tripId = msg.tripId ?? getCurrentTripId() ?? null;
         const locTs = msg.ts ?? Date.now();
-        try {
-          insertLocation({
-            tripId,
-            ts:        locTs,
-            lat:       msg.lat,
-            lon:       msg.lon,
-            accuracyM: msg.accuracy_m ?? msg.accuracyM ?? null,
-            speedMps:  msg.speed_mps  ?? msg.speedMps  ?? null,
-          });
-        } catch (err) {
-          console.warn('[ingest] insertLocation failed:', err.message);
+        const accuracyM = msg.accuracy_m ?? msg.accuracyM ?? null;
+        const speedMps  = msg.speed_mps  ?? msg.speedMps  ?? null;
+        if (tripId) {
+          try {
+            insertLocation({ tripId, ts: locTs, lat: msg.lat, lon: msg.lon, accuracyM, speedMps });
+          } catch (err) {
+            console.warn('[ingest] insertLocation failed:', err.message);
+          }
         }
-        // Live-Forward an /ws/live damit das Dashboard den Marker bewegen kann.
-        // Wir normalisieren Field-Namen auf camelCase (im JS-Land bequemer).
         broadcast({
           type: 'location',
-          tripId,
-          ts: locTs,
-          lat: msg.lat,
-          lon: msg.lon,
-          accuracyM: msg.accuracy_m ?? msg.accuracyM ?? null,
-          speedMps:  msg.speed_mps  ?? msg.speedMps  ?? null,
+          tripId, ts: locTs, lat: msg.lat, lon: msg.lon, accuracyM, speedMps,
         });
         break;
       }

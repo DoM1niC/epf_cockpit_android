@@ -55,6 +55,11 @@ class TelemetryStreamer @Inject constructor(
     private var socket: WebSocket? = null
     private var socketJob: Job? = null
     private var lastSentTelemetryTs: Long = 0L
+    // Vom User gesetzter Anzeigename — wird im hello/state-Frame als scooterName
+    // mitgeschickt. Null = Dashboard zeigt "E-Scooter" als Fallback. Cached
+    // statt suspend-Lookup, weil sendState/sendHello aus dem Listener heraus
+    // non-suspend laufen.
+    @Volatile private var cachedFriendlyName: String? = null
 
     private val _status = MutableStateFlow(Status.Disabled)
     val status: StateFlow<Status> = _status.asStateFlow()
@@ -76,6 +81,19 @@ class TelemetryStreamer @Inject constructor(
                     } else {
                         _status.value = Status.Disabled
                     }
+                }
+        }
+        // Friendly name separat cachen — wird live im hello/state mitgesendet.
+        // Aenderungen pushen wir aktiv via sendState damit das Dashboard das
+        // neue Label sofort sieht (ohne Reconnect-Bounce).
+        scope.launch {
+            settings.flow
+                .map { it.scooterFriendlyName }
+                .distinctUntilChanged()
+                .collect { name ->
+                    val changed = cachedFriendlyName != name
+                    cachedFriendlyName = name
+                    if (changed && socket != null) sendState(ble.connection.value)
                 }
         }
         // Forward connection-state changes to the server (when socket is open).
@@ -146,11 +164,12 @@ class TelemetryStreamer @Inject constructor(
         override fun onOpen(webSocket: WebSocket, response: Response) {
             _status.value = Status.Connected
             // Send hello with whatever we currently know about the scooter.
+            // scooterName = vom User vergebener Anzeigename (cached), Address
+            // bleibt die echte MAC fuer Server-side-Logging/Trip-Tagging.
             val conn = ble.connection.value
-            val name = (conn as? ConnectionState.Connected)?.address
             sendRaw(
                 StreamMessage.Hello(
-                    scooterName = name,
+                    scooterName = cachedFriendlyName,
                     scooterAddress = (conn as? ConnectionState.Connected)?.address,
                     authenticated = (conn as? ConnectionState.Connected)?.authenticated == true,
                     app = "epf_cockpit_android",
@@ -199,8 +218,11 @@ class TelemetryStreamer @Inject constructor(
     private fun sendState(c: ConnectionState) {
         val connected = c is ConnectionState.Connected
         val authenticated = (c as? ConnectionState.Connected)?.authenticated == true
-        val name = (c as? ConnectionState.Connected)?.address
-        sendRaw(StreamMessage.State(connected = connected, authenticated = authenticated, scooterName = name))
+        sendRaw(StreamMessage.State(
+            connected = connected,
+            authenticated = authenticated,
+            scooterName = cachedFriendlyName,
+        ))
     }
 
     private inline fun <reified T : StreamMessage> sendRaw(msg: T) {
@@ -229,7 +251,7 @@ class TelemetryStreamer @Inject constructor(
      * ohne dass die Caller anpassen müssen.
      */
     fun sendLocation(
-        tripId: String,
+        tripId: String?,
         ts: Long,
         lat: Double,
         lon: Double,

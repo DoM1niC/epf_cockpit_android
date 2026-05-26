@@ -36,6 +36,10 @@ data class SettingsUiState(
     val parking: Boolean = false,
     /** Opt-in für GPS-Waypoints pro Trip, default OFF. */
     val trackLocation: Boolean = false,
+    /** Opt-in: GPS auch im Idle/Parking an das Dashboard senden (nur live, nicht in Room). */
+    val trackLocationIdle: Boolean = false,
+    /** Vom User gesetzter Anzeigename des Rollers — leer = Fallback "E-Scooter". */
+    val scooterFriendlyName: String = "",
 )
 
 @HiltViewModel
@@ -64,6 +68,8 @@ class SettingsViewModel @Inject constructor(
             authenticated = (conn as? ConnectionState.Connected)?.authenticated == true,
             parking = tele?.parking == true,
             trackLocation = s.trackLocation,
+            trackLocationIdle = s.trackLocationIdle,
+            scooterFriendlyName = s.scooterFriendlyName.orEmpty(),
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SettingsUiState())
 
@@ -115,6 +121,14 @@ class SettingsViewModel @Inject constructor(
 
     fun setTrackLocation(enabled: Boolean) {
         viewModelScope.launch { store.setTrackLocation(enabled) }
+    }
+
+    fun setTrackLocationIdle(enabled: Boolean) {
+        viewModelScope.launch { store.setTrackLocationIdle(enabled) }
+    }
+
+    fun setScooterFriendlyName(name: String) {
+        viewModelScope.launch { store.setScooterFriendlyName(name) }
     }
 
     fun changePin(newPin: String) {

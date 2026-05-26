@@ -140,6 +140,21 @@ fun SettingsScreen(
                     }
                     Switch(checked = state.autoConnect, onCheckedChange = vm::setAutoConnect)
                 }
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = state.scooterFriendlyName,
+                    onValueChange = vm::setScooterFriendlyName,
+                    label = { Text("Anzeigename") },
+                    placeholder = { Text("z.B. Pulse Plus von Tom") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Wird im Dashboard als Scooter-Label gezeigt. Leer = Fallback \"E-Scooter\".",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             SectionCard("Darstellung", leadingIcon = Icons.Filled.DarkMode) {
@@ -286,13 +301,29 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Berechtigung erteilen") }
                 }
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Auch im Idle senden", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Sendet GPS auch wenn keine Fahrt läuft (geparkt / stehend). " +
+                                "Nur live ans Dashboard, wird nicht als Trip gespeichert.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.trackLocationIdle,
+                        enabled = state.trackLocation && granted,
+                        onCheckedChange = { vm.setTrackLocationIdle(it) },
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Wenn aktiv, zeichnet die App alle 5 Sekunden einen GPS-Punkt " +
-                        "auf — nur während eine Fahrt läuft und der Roller nicht " +
-                        "geparkt ist. Ohne Google-Dienste, direkt über " +
-                        "Android-LocationManager. Standort wird lokal gespeichert " +
-                        "und (falls Live-Streaming an ist) ans Dashboard geschickt.",
+                    "Wenn aktiv, zeichnet die App jede Sekunde einen GPS-Punkt auf " +
+                        "— während einer Fahrt persistent (pro Trip), sonst optional " +
+                        "nur live ans Dashboard. Ohne Google-Dienste, direkt über " +
+                        "Android-LocationManager.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

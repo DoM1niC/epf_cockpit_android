@@ -323,19 +323,30 @@
   setRangeStatus('Live');
 
   // ---------- Connection indicator ----------
+  // App schickt scooterName = vom User vergebener Anzeigename (oder null wenn
+  // nichts konfiguriert). Alte Builds schickten die MAC mit — die filtern wir
+  // raus, damit "AA:BB:CC:..." nicht ans UI durchschlaegt.
+  const MAC_RE = /^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$/;
+  function displayName(name) {
+    if (!name || MAC_RE.test(name)) return 'E-Scooter';
+    return name;
+  }
   function applyState(state) {
     const dot = $('conn-dot');
     const text = $('conn-text');
     if (state && state.connected) {
       dot.className = 'inline-block w-2.5 h-2.5 rounded-full bg-green-500';
       dot.title = 'Scooter verbunden';
-      text.textContent = state.scooterName || 'verbunden';
+      text.textContent = displayName(state.scooterName) + ' verbunden';
     } else {
       dot.className = 'inline-block w-2.5 h-2.5 rounded-full bg-gray-500';
       dot.title = 'Kein Scooter';
       text.textContent = 'Kein Scooter';
     }
-    setText('chip-scooter', 'Scooter: ' + (state && state.scooterName ? state.scooterName : '--'));
+    setText('chip-scooter',
+      state && state.connected
+        ? displayName(state.scooterName) + ': verbunden'
+        : 'Scooter: --');
   }
 
   // ---------- Telemetry → DOM ----------
@@ -447,17 +458,22 @@
     initLiveMap();
     if (!liveMap) return; // Leaflet nicht geladen
 
-    // Trip-Wechsel? → Trail purgen.
-    if (msg.tripId && msg.tripId !== liveTripId) {
-      liveTripId = msg.tripId;
+    // Trip-Wechsel oder Trip→Idle? → Trail purgen, sonst klebt eine alte
+    // Fahrt am neuen Marker. msg.tripId == null heisst Idle-Fix.
+    if (msg.tripId !== liveTripId) {
+      liveTripId = msg.tripId ?? null;
       liveTrailPts = [];
       liveTrail.setLatLngs([]);
     }
 
     const ll = [msg.lat, msg.lon];
-    liveTrailPts.push(ll);
-    if (liveTrailPts.length > TRAIL_MAX_POINTS) liveTrailPts.shift();
-    liveTrail.setLatLngs(liveTrailPts);
+    // Im Idle nur Marker bewegen, kein Trail-Append — sonst fuellt sich der
+    // Trail mit GPS-Jitter waehrend der Roller steht.
+    if (liveTripId) {
+      liveTrailPts.push(ll);
+      if (liveTrailPts.length > TRAIL_MAX_POINTS) liveTrailPts.shift();
+      liveTrail.setLatLngs(liveTrailPts);
+    }
 
     if (!liveMarker) {
       liveMarker = L.circleMarker(ll, {
@@ -481,7 +497,8 @@
     const meta = document.getElementById('live-map-meta');
     if (meta) {
       const acc = msg.accuracyM != null ? ` · ±${msg.accuracyM.toFixed(0)}m` : '';
-      meta.textContent = `${liveTrailPts.length} Pkt${acc}`;
+      const status = liveTripId ? `${liveTrailPts.length} Pkt` : 'Idle';
+      meta.textContent = `${status}${acc}`;
     }
   }
 
