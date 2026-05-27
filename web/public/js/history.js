@@ -78,6 +78,15 @@
       </div>`;
   }
 
+  // Alte Trips haben teilweise die BLE-MAC als scooter_name gespeichert,
+  // bevor der App-seitige Anzeigename eingefuehrt wurde. Wir filtern das im
+  // Frontend raus damit "AA:BB:CC:..." nicht in der Karten-Liste auftaucht.
+  const MAC_RE = /^[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){5}$/;
+  function displayScooterName(name) {
+    if (!name || MAC_RE.test(name)) return 'E-Scooter';
+    return name;
+  }
+
   function cardHtml(trip) {
     return `
       <article data-trip-id="${trip.id}"
@@ -88,7 +97,7 @@
             ${fmtDate(trip.started_at)}
           </div>
           <div class="text-sm text-[var(--color-on-surface-dim)] inline-flex items-center gap-1.5">
-            ${trip.scooter_name ? svg('bike') + ' ' + trip.scooter_name : ''}
+            ${svg('bike')} ${displayScooterName(trip.scooter_name)}
           </div>
         </header>
         <dl class="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm tabular-nums">
@@ -320,6 +329,19 @@
       lineCap: 'round',
     }).addTo(map);
 
+    // Wegpunkte als kleine Dots sichtbar machen — sonst sieht ein Trip mit
+    // wenigen, weit auseinanderliegenden Fixes wie pure Luftlinie aus und
+    // der User kann nicht erkennen wo die einzelnen Samples liegen. Bei
+    // sehr langen Trips (>500 Punkte) jeden N-ten Punkt nehmen, sonst
+    // ruckelt die Map beim Schwenken.
+    const stride = latlngs.length > 500 ? Math.ceil(latlngs.length / 500) : 1;
+    for (let i = 1; i < latlngs.length - 1; i += stride) {
+      L.circleMarker(latlngs[i], {
+        radius: 2.5, color: '#4DD0E1', weight: 1,
+        fillColor: '#4DD0E1', fillOpacity: 0.9, interactive: false,
+      }).addTo(map);
+    }
+
     L.circleMarker(latlngs[0], startMarkerStyle)
       .bindTooltip('Start', { direction: 'top', offset: [0, -8] })
       .addTo(map);
@@ -349,7 +371,21 @@
 
   function bindCardClicks() {
     list.querySelectorAll('article[data-trip-id]').forEach(article => {
-      article.addEventListener('click', () => {
+      // Beim Wisch/Pan endet der Mouseup haeufig AUSSERHALB der Karte (z.B.
+      // auf dem Card-Body), wenn der User schwungvoll zieht. e.target im
+      // anschliessenden Click waere dann nicht mehr im .map-host und der
+      // Card-Collapse wuerde feuern. Wir merken uns deshalb wo der Drag
+      // STARTET (pointerdown) und ignorieren den Click wenn er aus dem
+      // Chart-/Map-Bereich kommt.
+      let downInProtected = false;
+      article.addEventListener('pointerdown', (e) => {
+        downInProtected = !!e.target.closest('.chart-host, .map-host');
+      });
+      article.addEventListener('click', (e) => {
+        if (downInProtected || e.target.closest('.chart-host, .map-host')) {
+          downInProtected = false;
+          return;
+        }
         const chartHost = article.querySelector('.chart-host');
         if (!chartHost.classList.contains('hidden') && chartHost.children.length > 0) {
           // Collapse: Chart + Map ausblenden, Map-Instanz freigeben.
@@ -386,7 +422,50 @@
     // gesetzt. Klick toggelt nur das Eingabe-Panel, ohne sofort zu laden.
     { id: 'custom', label: 'Eigener Zeitraum', range: () => null, isCustomToggle: true },
   ];
-  let activeFilter = FILTERS[2]; // Default: 30 Tage
+  let activeFilter = FILTERS[2]; // Default: 30 Tage (vor Restore)
+
+  // Filter-Auswahl über Refresh hinweg merken. Bei Custom-Range zusätzlich
+  // die ISO-Daten persistieren, damit der gleiche Zeitraum exakt wieder
+  // hergestellt wird (sonst landet man nur auf dem "Eigener Zeitraum"-Chip
+  // ohne tatsaechlich konfigurierte Range).
+  const FILTER_STORAGE_KEY = 'epf.history.filter';
+  function saveActiveFilter() {
+    try {
+      const payload = { id: activeFilter.id };
+      if (activeFilter.id === 'custom' && activeFilter._fromIso && activeFilter._toIso) {
+        payload.fromIso = activeFilter._fromIso;
+        payload.toIso = activeFilter._toIso;
+      }
+      localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(payload));
+    } catch { /* localStorage disabled / private mode — silently ignore */ }
+  }
+  function restoreActiveFilter() {
+    let saved;
+    try {
+      const raw = localStorage.getItem(FILTER_STORAGE_KEY);
+      if (!raw) return;
+      saved = JSON.parse(raw);
+    } catch { return; }
+    if (!saved || typeof saved.id !== 'string') return;
+    const entry = FILTERS.find(f => f.id === saved.id);
+    if (!entry || entry.isCustomToggle) return;
+    if (entry.id === 'custom') {
+      // Custom-Range nur restoren wenn beide Daten valide sind. Sonst auf
+      // den Default-Filter zurueckfallen statt einen halb-konfigurierten
+      // Custom-Chip zu zeigen.
+      const fromMs = parseDateInput(saved.fromIso);
+      const toMs = parseDateInput(saved.toIso);
+      if (fromMs == null || toMs == null || fromMs > toMs) return;
+      const toExclusive = toMs + 86_400_000;
+      entry.label = fromMs === toMs
+        ? `Eigener Zeitraum: ${formatLabelDate(fromMs)}`
+        : `Eigener Zeitraum: ${formatLabelDate(fromMs)} – ${formatLabelDate(toMs)}`;
+      entry.range = () => [fromMs, toExclusive];
+      entry._fromIso = saved.fromIso;
+      entry._toIso = saved.toIso;
+    }
+    activeFilter = entry;
+  }
 
   function dayRange(offsetDays) {
     const d = new Date();
@@ -433,6 +512,7 @@
         }
         if (next.id === activeFilter.id) return;
         activeFilter = next;
+        saveActiveFilter();
         hideCustomPanel();
         renderChips();
         load();
@@ -510,6 +590,7 @@
       customEntry._fromIso = fromEl.value;
       customEntry._toIso = toEl.value;
       activeFilter = customEntry;
+      saveActiveFilter();
       hideCustomPanel();
       renderChips();
       load();
@@ -577,6 +658,7 @@
     }
   }
 
+  restoreActiveFilter();
   renderChips();
   bindCustomPanel();
   load();

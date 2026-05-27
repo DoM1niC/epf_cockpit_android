@@ -15,6 +15,12 @@
   const MIN_LIVE_WINDOW_S = 15;
   let liveWindowSeconds = DEFAULT_LIVE_WINDOW_S;
 
+  // Drag-to-Zoom im Live-Modus: User zieht eine Box, wir frieren den Chart
+  // auf diesen Bereich ein. range() liefert dann die frozen-Werte statt des
+  // rolling Fensters, sodass nachfolgende setData()-Aufrufe (1s-Frames) den
+  // Zoom nicht wegspülen. Doppelklick = Reset zurück auf Live-Rolling.
+  let liveDragFrozen = null;
+
   // Time-range presets for the chart selector. "live" = use the rolling
   // in-memory buffer driven by the WS stream; everything else = one-shot
   // fetch from /api/telemetry, charts then stay frozen until the user
@@ -82,11 +88,36 @@
   function wheelZoomPlugin({ factor = 0.85 } = {}) {
     return {
       hooks: {
+        // setSelect feuert nachdem der User eine Drag-Box gezogen hat. uPlot
+        // setzt danach automatisch setScale auf den eigenen Chart — das
+        // reicht uns aber nicht: im Live-Modus müssen wir alle drei Charts
+        // synchron einfrieren und range() umlenken, sonst zieht der nächste
+        // Telemetrie-Frame den Zoom sofort zurueck auf das rolling Fenster.
+        setSelect(u) {
+          if (!isLive()) return;
+          const w = u.select.width;
+          if (!w || w < 5) return; // Klick / sehr kleiner Drag → ignorieren
+          const minSec = u.posToVal(u.select.left, 'x');
+          const maxSec = u.posToVal(u.select.left + w, 'x');
+          if (!(maxSec > minSec)) return;
+          liveDragFrozen = { from: minSec * 1000, to: maxSec * 1000 };
+          chartSpeed && chartSpeed.setScale('x', { min: minSec, max: maxSec });
+          chartPower && chartPower.setScale('x', { min: minSec, max: maxSec });
+          chartBatt  && chartBatt.setScale('x',  { min: minSec, max: maxSec });
+          setRangeStatus('Live · pausiert · Doppelklick = Reset');
+        },
         ready(u) {
           u.over.addEventListener('wheel', (e) => {
             e.preventDefault();
 
             if (isLive()) {
+              // Wheel im eingefrorenen Live-Modus → erst auftauen, dann
+              // Standard-Live-Wheel-Verhalten (Fenster-Resize).
+              if (liveDragFrozen) {
+                liveDragFrozen = null;
+                syncLiveWindow();
+                return;
+              }
               const oldS = liveWindowSeconds;
               const newS = Math.max(
                 MIN_LIVE_WINDOW_S,
@@ -122,9 +153,70 @@
             chartBatt  && chartBatt.setScale('x',  { min: nxMin, max: nxMax });
           }, { passive: false });
 
-          // Doppelklick im Live-Modus = Fenster auf Default (5 min) zurück.
+          // ---- Drag = Pan (horizontal) ----
+          // Im Live frieren wir den aktuellen Range ein (sonst pannt das
+          // rolling Fenster sofort zurueck). Im History verschieben wir
+          // frozenFrom/To. Alle drei Charts werden synchron mitgezogen, damit
+          // x-Achsen aligned bleiben. mouseup/move auf window, damit der
+          // Drag nicht abreisst sobald die Maus den Chart verlaesst.
+          let panActive = false;
+          let panStartX = 0;
+          let panStartMin = 0;
+          let panStartMax = 0;
+          let panCssWidth = 0;
+          u.over.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            if (isLive() && !liveDragFrozen) {
+              const now = Date.now() / 1000;
+              liveDragFrozen = {
+                from: (now - liveWindowSeconds) * 1000,
+                to: now * 1000,
+              };
+              setRangeStatus('Live · pausiert · Doppelklick = Reset');
+            }
+            panActive = true;
+            panStartX = e.clientX;
+            panStartMin = u.scales.x.min;
+            panStartMax = u.scales.x.max;
+            panCssWidth = u.bbox.width / window.devicePixelRatio;
+            u.over.style.cursor = 'grabbing';
+            e.preventDefault();
+          });
+          const onMove = (e) => {
+            if (!panActive) return;
+            const dxPx = e.clientX - panStartX;
+            const valPerPx = (panStartMax - panStartMin) / panCssWidth;
+            const newMin = panStartMin - dxPx * valPerPx;
+            const newMax = panStartMax - dxPx * valPerPx;
+            chartSpeed && chartSpeed.setScale('x', { min: newMin, max: newMax });
+            chartPower && chartPower.setScale('x', { min: newMin, max: newMax });
+            chartBatt  && chartBatt.setScale('x',  { min: newMin, max: newMax });
+            if (isLive()) {
+              liveDragFrozen = { from: newMin * 1000, to: newMax * 1000 };
+            } else {
+              frozenFrom = newMin * 1000;
+              frozenTo = newMax * 1000;
+            }
+          };
+          const onUp = () => {
+            if (!panActive) return;
+            panActive = false;
+            u.over.style.cursor = '';
+          };
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup', onUp);
+
+          // Doppelklick im Live-Modus:
+          //  - eingefroren (Drag-Zoom) → erst Auftauen
+          //  - sonst Fenster auf Default (5 min) zurück
           u.over.addEventListener('dblclick', () => {
             if (!isLive()) return;
+            if (liveDragFrozen) {
+              liveDragFrozen = null;
+              liveWindowSeconds = DEFAULT_LIVE_WINDOW_S;
+              syncLiveWindow();
+              return;
+            }
             if (liveWindowSeconds === DEFAULT_LIVE_WINDOW_S) return;
             liveWindowSeconds = DEFAULT_LIVE_WINDOW_S;
             syncLiveWindow();
@@ -165,6 +257,9 @@
           // setScale triggert das NICHT, der Zoom bleibt also stabil.
           range: () => {
             if (isLive()) {
+              if (liveDragFrozen) {
+                return [liveDragFrozen.from / 1000, liveDragFrozen.to / 1000];
+              }
               const now = Date.now() / 1000;
               return [now - liveWindowSeconds, now];
             }
@@ -179,8 +274,10 @@
       // egal, wir haben nur eine). live:true heißt: Werte unter dem Cursor
       // werden in der Legende angezeigt.
       legend: { show: true, live: true },
-      // Drag-Zoom auf x-Achse — wirkt nur in History (im Live frisst's range()).
-      cursor: { drag: { x: true, y: false } },
+      // Cursor-Drag deaktiviert — wir handhaben mousedown/move/up selbst, um
+      // Pan (links/rechts) statt Zoom-Box zu liefern. Zoom rein/raus laeuft
+      // ueber das Mausrad, Reset via Doppelklick.
+      cursor: { drag: { x: false, y: false } },
       axes: [
         { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' }, values: EU_AXIS_VALUES },
         { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' } }
@@ -272,6 +369,7 @@
     if (next.live) {
       frozenFrom = null;
       frozenTo = null;
+      liveDragFrozen = null;
       // Beim Wechsel auf Live das Zoom-Fenster auf Default zurueck —
       // sonst wirkt die alte Wheel-Position aus der vorigen Live-Session
       // verwirrend (z.B. "Live · 30s" nach Auto-Switch).
