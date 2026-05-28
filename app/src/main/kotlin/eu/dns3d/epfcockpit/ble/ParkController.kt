@@ -51,11 +51,12 @@ sealed interface ParkPhase {
  *   4. landet in Confirmed oder Failed — in BEIDEN Fällen zeigt die UI danach
  *      den ECHTEN Telemetrie-Wert, nie eine Lüge.
  *
- * NUR der Park-Toggle ([BleRepository.setParking]) läuft hier durch. Mode-/
- * Max-Speed-Frames flippen das Telemetrie-Bit 5 zwar mit, ändern aber den
- * physischen Park-Zustand NICHT — daher dürfen sie den Park-Switch nicht
- * bewegen. Genau deshalb folgt die Anzeige NICHT live der Telemetrie, sondern
- * einem Latch (siehe [parkingDisplay]).
+ * Der Park-Toggle ([BleRepository.setParking]) läuft durch die Verify-Logik.
+ * Mode-/Max-Speed-Frames (Stand/Kick) DEAKTIVIEREN physisch das Parken — der
+ * Park-Switch muss also auf "entparkt" mitziehen, aber OHNE Spinner/Fehler am
+ * Park-Control (das wäre die falsche Stelle für Mode-Feedback). Dafür gibt es
+ * [notePark], das den Latch direkt setzt. Wir folgen NICHT live dem Telemetrie-
+ * Bit 5, weil das durch den Mode mehrdeutig ist (siehe [parkingDisplay]/[_latch]).
  */
 class ParkController(
     private val scope: CoroutineScope,
@@ -71,13 +72,13 @@ class ParkController(
      * Park-Toggle aktualisiert.
      *
      * WICHTIG — warum kein Live-Folgen der Telemetrie: das Statusbyte-Bit 5 ist
-     * durch den Mode kontaminiert. Ein Stand-Frame (0xA2) setzt Bit 5, ein
-     * Kick-Frame (0x82) löscht es — OHNE dass sich der physische Park-Zustand
-     * ändert. Würde der Switch dem Bit live folgen, springt er bei jedem
-     * Stand/Kick-Tap (genau die Beschwerde). Direkt NACH einem Park-Frame ist
-     * Bit 5 aber korrekt (das Frame überschreibt das ganze Flags-Byte) — deshalb
-     * verifizieren wir Park-Toggles gegen die Telemetrie und latchen nur dann.
-     * `null` vor dem ersten Frame / nach Disconnect.
+     * durch den Mode mehrdeutig. Ein Mode-Frame flippt Bit 5 mit, ohne dass das
+     * den echten Park-Zustand 1:1 abbildet — würde der Switch dem Bit live
+     * folgen, sprang er unvorhersehbar bei Stand/Kick-Taps. Direkt NACH einem
+     * Park-Frame ist Bit 5 dagegen korrekt (das Frame überschreibt das ganze
+     * Flags-Byte) — deshalb verifizieren wir Park-Toggles gegen die Telemetrie
+     * und latchen nur dann. Mode-Wechsel aktualisieren den Latch direkt über
+     * [notePark]. `null` vor dem ersten Frame / nach Disconnect.
      */
     private val _latch = MutableStateFlow<Boolean?>(null)
 
@@ -119,6 +120,21 @@ class ParkController(
         job?.cancel()
         settleJob?.cancel()
         job = scope.launch { verify(target, frame, label) }
+    }
+
+    /**
+     * Park-Latch direkt setzen, OHNE Verify/Pending. Für bekannte Seiteneffekte
+     * anderer Frames: ein Mode-/Speed-Frame (Stand/Kick) deaktiviert physisch
+     * das Parken, also soll der Park-Switch sofort auf "entparkt" mitziehen —
+     * aber ohne Spinner/Fehlertext am Park-Control (das wäre die falsche Stelle
+     * für ein Mode-Feedback). Storniert eine laufende Park-Verifikation, weil
+     * der Mode-Frame deren Ergebnis ohnehin überschreibt.
+     */
+    fun notePark(value: Boolean) {
+        job?.cancel()
+        settleJob?.cancel()
+        _phase.value = ParkPhase.Idle
+        _latch.value = value
     }
 
     /** Vom Disconnect-Observer aufgerufen — nie ein Pending über einen Link-Verlust leaken. */

@@ -493,12 +493,12 @@ class BleRepository @Inject constructor(
     fun setRideMode(stand: Boolean) {
         val g3 = cachedMaxSpeedKmh
         val frame = if (stand) ControlFrames.modeStandStop(g3) else ControlFrames.modeKickStart(g3)
-        // Direkter Write, NICHT durch den ParkController: der Mode-Frame flippt
-        // zwar das Telemetrie-Bit 5 mit, ändert aber den physischen Park-Zustand
-        // NICHT — der Park-Switch darf sich beim Stand/Kick-Tap also nicht
-        // bewegen. Genau deshalb folgt parkingDisplay einem Latch statt der
-        // Live-Telemetrie (siehe ParkController).
+        // Direkter Write, NICHT durch die Verify-Logik (sonst Spinner/Fehler am
+        // falschen Control). Ein Mode-Wechsel deaktiviert physisch das Parken,
+        // also den Park-Latch sofort auf "entparkt" setzen, damit der Switch
+        // mitzieht und der State stimmt.
         manager.writeLowFrame(frame, label = if (stand) "mode-stand" else "mode-kick")
+        parkController.notePark(false)
     }
 
     /**
@@ -516,10 +516,11 @@ class BleRepository @Inject constructor(
         val clamped = kmh.coerceIn(1, 40)
         cachedMaxSpeedKmh = clamped
         val frame = ControlFrames.modeStandStop(clamped)
-        // Direkter Write, NICHT durch den ParkController: eine Speed-Änderung
-        // soll nicht den geteilten Park-Channel auf Pending(true) ziehen und
-        // damit ein Phantom-Park-Toggle auf Dashboard/Widget/Tile auslösen.
+        // Direkter Write, NICHT durch die Verify-Logik (kein Phantom-Park-Pending
+        // auf Dashboard/Widget/Tile). Das Frame ist ein Stand-Mode-Frame und
+        // deaktiviert physisch das Parken — Latch entsprechend auf "entparkt".
         manager.writeLowFrame(frame, label = "set-maxspeed-$clamped")
+        parkController.notePark(false)
         scope.launch { settings.setGearLimits(g1 = 6, g2 = 15, g3 = clamped) }
     }
 
