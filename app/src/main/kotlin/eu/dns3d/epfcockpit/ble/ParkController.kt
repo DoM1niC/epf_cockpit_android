@@ -51,12 +51,11 @@ sealed interface ParkPhase {
  *   4. landet in Confirmed oder Failed — in BEIDEN Fällen zeigt die UI danach
  *      den ECHTEN Telemetrie-Wert, nie eine Lüge.
  *
- * NUR der Park-Toggle ([BleRepository.setParking]) läuft hier durch und
- * surface't Pending/Failed an die Park-UI. Mode-/Max-Speed-Frames flippen das
- * Park-Bit zwar ebenfalls (0xA2 parkt, 0x82 entparkt), werden aber bewusst NICHT
- * hier verifiziert — sonst würde ein Mode-/Speed-Befehl Spinner + Fehlertext am
- * falschen Control (dem Park-Switch) auslösen. Ihr Park-Nebeneffekt erscheint
- * trotzdem korrekt über den live Telemetrie-Mirror im Idle-Zustand.
+ * NUR der Park-Toggle ([BleRepository.setParking]) läuft hier durch. Mode-/
+ * Max-Speed-Frames flippen das Telemetrie-Bit 5 zwar mit, ändern aber den
+ * physischen Park-Zustand NICHT — daher dürfen sie den Park-Switch nicht
+ * bewegen. Genau deshalb folgt die Anzeige NICHT live der Telemetrie, sondern
+ * einem Latch (siehe [parkingDisplay]).
  */
 class ParkController(
     private val scope: CoroutineScope,
@@ -67,30 +66,48 @@ class ParkController(
     val phase: StateFlow<ParkPhase> = _phase.asStateFlow()
 
     /**
+     * Letzter BEKANNTER Park-Zustand (Latch). Wird einmalig aus dem ersten
+     * Telemetrie-Frame geseedet und danach NUR durch einen bestätigten
+     * Park-Toggle aktualisiert.
+     *
+     * WICHTIG — warum kein Live-Folgen der Telemetrie: das Statusbyte-Bit 5 ist
+     * durch den Mode kontaminiert. Ein Stand-Frame (0xA2) setzt Bit 5, ein
+     * Kick-Frame (0x82) löscht es — OHNE dass sich der physische Park-Zustand
+     * ändert. Würde der Switch dem Bit live folgen, springt er bei jedem
+     * Stand/Kick-Tap (genau die Beschwerde). Direkt NACH einem Park-Frame ist
+     * Bit 5 aber korrekt (das Frame überschreibt das ganze Flags-Byte) — deshalb
+     * verifizieren wir Park-Toggles gegen die Telemetrie und latchen nur dann.
+     * `null` vor dem ersten Frame / nach Disconnect.
+     */
+    private val _latch = MutableStateFlow<Boolean?>(null)
+
+    /**
      * Der Wert den JEDE Oberfläche (Dashboard, Tile, Widget, Service) anzeigt:
-     *   - Pending   → optimistisches Ziel (Switch springt nicht sichtbar)
-     *   - Confirmed → bestätigter Wert
-     *   - Failed    → echter beobachteter Wert (genau das killt den Doppel-Tap)
-     *   - Idle      → live Telemetrie-Bit
-     * `null` bis zum ersten Telemetrie-Frame / nach Disconnect — die UI zeigt
-     * dann "unbekannt" statt eines erfundenen `false`.
+     *   - Pending → optimistisches Ziel (Switch springt während Verify nicht)
+     *   - sonst   → der Latch (zuletzt bestätigter Park-Zustand)
+     * So bewegt ein Mode-Wechsel den Park-Switch NICHT, und ein verlorener
+     * Park-Toggle (Failed) lässt den Switch auf dem echten letzten Wert stehen
+     * statt zu lügen — was den Doppel-Tap killt.
      */
     val parkingDisplay: StateFlow<Boolean?> =
-        combine(_phase, telemetry) { p, t ->
-            when (p) {
-                is ParkPhase.Pending -> p.target
-                is ParkPhase.Confirmed -> p.value
-                // Failed: bevorzugt die LIVE-Telemetrie — falls das Frame doch
-                // noch spät griff (BLE-Stau, knapp außerhalb des 900ms-Fensters),
-                // zeigt der Switch sofort den echten Wert statt 3s lang den beim
-                // Timeout eingefrorenen observed-Snapshot.
-                is ParkPhase.Failed -> t?.parking ?: p.observed
-                ParkPhase.Idle -> t?.parking
-            }
-        }.stateIn(scope, SharingStarted.Eagerly, telemetry.value?.parking)
+        combine(_phase, _latch) { p, latch ->
+            if (p is ParkPhase.Pending) p.target else latch
+        }.stateIn(scope, SharingStarted.Eagerly, _latch.value)
 
     private var job: Job? = null
     private var settleJob: Job? = null
+
+    init {
+        // Latch einmalig aus dem ersten Telemetrie-Frame seeden. Danach NICHT
+        // mehr der Telemetrie folgen (Mode-Kontamination) — nur bestätigte
+        // Park-Toggles aktualisieren den Latch. Nach Disconnect (Latch = null,
+        // Telemetrie wird genullt) re-seedet das nächste Frame auf Reconnect.
+        scope.launch {
+            telemetry.filterNotNull().collect { t ->
+                if (_latch.value == null) _latch.value = t.parking
+            }
+        }
+    }
 
     /**
      * Park/Mode auf [target] setzen und gegen die Telemetrie verifizieren.
@@ -109,6 +126,9 @@ class ParkController(
         job?.cancel()
         settleJob?.cancel()
         _phase.value = ParkPhase.Idle
+        // Latch invalidieren, damit der nächste verbundene Scooter neu geseedet
+        // wird statt den Park-Zustand des vorigen anzuzeigen.
+        _latch.value = null
     }
 
     private suspend fun verify(target: Boolean, frame: ByteArray, label: String) {
@@ -137,6 +157,9 @@ class ParkController(
             // kein veraltetes Confirmed mehr schreiben.
             coroutineContext.ensureActive()
             if (confirmed != null) {
+                // Bestätigt → Latch aktualisieren (die einzige Stelle die ihn
+                // außer dem initialen Seed verschiebt).
+                _latch.value = target
                 _phase.value = ParkPhase.Confirmed(target)
                 scheduleSettle(ParkPhase.Confirmed(target), SETTLE_MS)
                 return
@@ -151,8 +174,8 @@ class ParkController(
     }
 
     /**
-     * Confirmed/Failed nach kurzer Zeit zurück auf Idle, sodass wieder die live
-     * Telemetrie die Anzeige treibt. SEPARATE Coroutine + Identitäts-Check,
+     * Confirmed/Failed nach kurzer Zeit zurück auf Idle, sodass die Anzeige
+     * wieder dem Latch folgt. SEPARATE Coroutine + Identitäts-Check,
      * damit ein superseding request() (das schon ein frisches Pending gesetzt
      * hat) nicht überschrieben wird.
      */

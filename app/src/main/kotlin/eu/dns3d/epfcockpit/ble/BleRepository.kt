@@ -494,11 +494,10 @@ class BleRepository @Inject constructor(
         val g3 = cachedMaxSpeedKmh
         val frame = if (stand) ControlFrames.modeStandStop(g3) else ControlFrames.modeKickStart(g3)
         // Direkter Write, NICHT durch den ParkController: der Mode-Frame flippt
-        // zwar das Park-Bit (0xA2 parkt, 0x82 entparkt), aber Mode selbst ist in
-        // der Telemetrie nicht ablesbar — und würden wir hier verifizieren, käme
-        // Spinner + "Parkzustand nicht bestätigt" am Park-Switch (falsches
-        // Control). Der Park-Nebeneffekt erscheint korrekt über den
-        // Telemetrie-Mirror in parkingDisplay (Idle), sobald das nächste Frame da ist.
+        // zwar das Telemetrie-Bit 5 mit, ändert aber den physischen Park-Zustand
+        // NICHT — der Park-Switch darf sich beim Stand/Kick-Tap also nicht
+        // bewegen. Genau deshalb folgt parkingDisplay einem Latch statt der
+        // Live-Telemetrie (siehe ParkController).
         manager.writeLowFrame(frame, label = if (stand) "mode-stand" else "mode-kick")
     }
 
@@ -519,8 +518,7 @@ class BleRepository @Inject constructor(
         val frame = ControlFrames.modeStandStop(clamped)
         // Direkter Write, NICHT durch den ParkController: eine Speed-Änderung
         // soll nicht den geteilten Park-Channel auf Pending(true) ziehen und
-        // damit ein Phantom-Park-Toggle auf Dashboard/Widget/Tile auslösen. Der
-        // Park-Nebeneffekt (0xA2 parkt) erscheint über den Telemetrie-Mirror.
+        // damit ein Phantom-Park-Toggle auf Dashboard/Widget/Tile auslösen.
         manager.writeLowFrame(frame, label = "set-maxspeed-$clamped")
         scope.launch { settings.setGearLimits(g1 = 6, g2 = 15, g3 = clamped) }
     }
