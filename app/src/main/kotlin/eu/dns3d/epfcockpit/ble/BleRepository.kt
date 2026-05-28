@@ -82,15 +82,16 @@ class BleRepository @Inject constructor(
     val voiceOff: StateFlow<Boolean?> = _voiceOff.asStateFlow()
 
     /**
-     * Letzter explizit per [setParking] ausgeloester Park-Zustand. Wird auch
-     * vom Widget / Quick-Tile / Service gesetzt — damit der Dashboard-VM
-     * beim Tap aus dem Widget den neuen Wert in der UI reflektiert (sonst
-     * bliebe der lokale parking-Switch im Dashboard auf dem alten Wert
-     * stehen, weil das Telemetrie-Bit fuer Park nicht zuverlaessig spiegelt).
-     * Null bis der erste setParking()-Call lief.
+     * Verify-after-write fuer Park/Mode. Setzt jedes Park-/Mode-Frame ab und
+     * verifiziert gegen das Telemetrie-Bit (Status [22] & 0x20), wiederholt bei
+     * verlorenem Frame, und liefert den ECHTEN bestaetigten Zustand statt eines
+     * optimistischen. [parkingDisplay] ist die einzige Quelle die jede
+     * Oberflaeche (Dashboard, Tile, Widget, Service) anzeigt; [parkPhase] gibt
+     * Pending/Confirmed/Failed fuer eine Lade-/Fehleranzeige.
      */
-    private val _lastIssuedParking = MutableStateFlow<Boolean?>(null)
-    val lastIssuedParking: StateFlow<Boolean?> = _lastIssuedParking.asStateFlow()
+    private val parkController = ParkController(scope, manager.telemetry, manager::writeLowFrame)
+    val parkPhase: StateFlow<ParkPhase> = parkController.phase
+    val parkingDisplay: StateFlow<Boolean?> = parkController.parkingDisplay
 
     /**
      * Live-Cache der User-Max-Speed aus den Settings. Wird in JEDES `0xAF`-
@@ -117,6 +118,10 @@ class BleRepository @Inject constructor(
                 when (event) {
                     is ScooterManager.ConnEvent.Disconnected -> {
                         stopHeartbeat()
+                        // Nie ein Pending ueber den Link-Verlust schleppen —
+                        // sonst sieht der User nach dem Disconnect noch ~2.7s
+                        // ein Phantom-Pending bevor die Timeouts durch sind.
+                        parkController.onDisconnected()
                         if (event.userInitiated) {
                             _connection.value = ConnectionState.Disconnected
                         } else {
@@ -473,8 +478,9 @@ class BleRepository @Inject constructor(
     fun setParking(on: Boolean) {
         val g3 = cachedMaxSpeedKmh
         val frame = if (on) ControlFrames.parkingOn(g3) else ControlFrames.parkingOff(g3)
-        manager.writeLowFrame(frame, label = if (on) "park-on" else "park-off")
-        _lastIssuedParking.value = on
+        // Durch den ParkController: sendet + verifiziert gegen die Telemetrie +
+        // wiederholt bei verlorenem Frame. Kein optimistisches Lügen mehr.
+        parkController.request(target = on, frame = frame, label = if (on) "park-on" else "park-off")
     }
 
     /**
@@ -487,6 +493,12 @@ class BleRepository @Inject constructor(
     fun setRideMode(stand: Boolean) {
         val g3 = cachedMaxSpeedKmh
         val frame = if (stand) ControlFrames.modeStandStop(g3) else ControlFrames.modeKickStart(g3)
+        // Direkter Write, NICHT durch den ParkController: der Mode-Frame flippt
+        // zwar das Park-Bit (0xA2 parkt, 0x82 entparkt), aber Mode selbst ist in
+        // der Telemetrie nicht ablesbar — und würden wir hier verifizieren, käme
+        // Spinner + "Parkzustand nicht bestätigt" am Park-Switch (falsches
+        // Control). Der Park-Nebeneffekt erscheint korrekt über den
+        // Telemetrie-Mirror in parkingDisplay (Idle), sobald das nächste Frame da ist.
         manager.writeLowFrame(frame, label = if (stand) "mode-stand" else "mode-kick")
     }
 
@@ -505,6 +517,10 @@ class BleRepository @Inject constructor(
         val clamped = kmh.coerceIn(1, 40)
         cachedMaxSpeedKmh = clamped
         val frame = ControlFrames.modeStandStop(clamped)
+        // Direkter Write, NICHT durch den ParkController: eine Speed-Änderung
+        // soll nicht den geteilten Park-Channel auf Pending(true) ziehen und
+        // damit ein Phantom-Park-Toggle auf Dashboard/Widget/Tile auslösen. Der
+        // Park-Nebeneffekt (0xA2 parkt) erscheint über den Telemetrie-Mirror.
         manager.writeLowFrame(frame, label = "set-maxspeed-$clamped")
         scope.launch { settings.setGearLimits(g1 = 6, g2 = 15, g3 = clamped) }
     }

@@ -35,6 +35,7 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -74,6 +75,8 @@ fun DashboardScreen(
     val controlsLocked by vm.controlsLocked.collectAsStateWithLifecycle()
     val telemetry = state.telemetry
     val parking = state.parking
+    val parkPending = state.parkPending
+    val parkFailed = state.parkFailed
 
     val view = LocalView.current
     DisposableEffect(view) {
@@ -109,6 +112,8 @@ fun DashboardScreen(
                 padding = padding,
                 telemetry = telemetry,
                 parking = parking,
+                parkPending = parkPending,
+                parkFailed = parkFailed,
                 blinkertonOff = blinkertonOff,
                 rideMode = state.rideMode,
                 controlsLocked = controlsLocked,
@@ -121,6 +126,8 @@ fun DashboardScreen(
                 padding = padding,
                 telemetry = telemetry,
                 parking = parking,
+                parkPending = parkPending,
+                parkFailed = parkFailed,
                 blinkertonOff = blinkertonOff,
                 rideMode = state.rideMode,
                 controlsLocked = controlsLocked,
@@ -136,7 +143,9 @@ fun DashboardScreen(
 private fun PortraitLayout(
     padding: androidx.compose.foundation.layout.PaddingValues,
     telemetry: Telemetry?,
-    parking: Boolean,
+    parking: Boolean?,
+    parkPending: Boolean,
+    parkFailed: Boolean,
     blinkertonOff: Boolean?,
     rideMode: RideMode,
     controlsLocked: Boolean,
@@ -173,6 +182,8 @@ private fun PortraitLayout(
         StatGrid(telemetry)
         ControlSection(
             parking = parking,
+            parkPending = parkPending,
+            parkFailed = parkFailed,
             blinkertonOff = blinkertonOff,
             rideMode = rideMode,
             locked = controlsLocked,
@@ -188,7 +199,9 @@ private fun PortraitLayout(
 private fun LandscapeLayout(
     padding: androidx.compose.foundation.layout.PaddingValues,
     telemetry: Telemetry?,
-    parking: Boolean,
+    parking: Boolean?,
+    parkPending: Boolean,
+    parkFailed: Boolean,
     blinkertonOff: Boolean?,
     rideMode: RideMode,
     controlsLocked: Boolean,
@@ -251,6 +264,8 @@ private fun LandscapeLayout(
             StatGrid(telemetry)
             ControlSection(
                 parking = parking,
+                parkPending = parkPending,
+                parkFailed = parkFailed,
                 blinkertonOff = blinkertonOff,
                 rideMode = rideMode,
                 locked = controlsLocked,
@@ -321,7 +336,9 @@ private fun StatGrid(telemetry: Telemetry?) {
 
 @Composable
 private fun ControlSection(
-    parking: Boolean,
+    parking: Boolean?,
+    parkPending: Boolean,
+    parkFailed: Boolean,
     blinkertonOff: Boolean?,
     rideMode: RideMode,
     locked: Boolean,
@@ -343,10 +360,21 @@ private fun ControlSection(
         SwitchRow(
             icon = Icons.Filled.LocalParking,
             label = "Parking",
-            checked = parking,
-            enabled = !locked,
+            checked = parking == true,
+            // Während der Verifikation deaktivieren, damit kein zweiter Tap
+            // den laufenden Befehl überschreibt; danach zeigt der Switch den
+            // bestätigten Telemetrie-Wert.
+            enabled = !locked && !parkPending,
+            pending = parkPending,
             onToggle = onParkingToggle,
         )
+        if (parkFailed) {
+            Text(
+                "Parkzustand nicht bestätigt — bitte erneut versuchen",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             SegmentedButton(
                 selected = rideMode == RideMode.Stand,
@@ -381,6 +409,7 @@ private fun SwitchRow(
     checked: Boolean,
     enabled: Boolean,
     onToggle: () -> Unit,
+    pending: Boolean = false,
 ) {
     Card(
         onClick = { if (enabled) onToggle() },
@@ -405,6 +434,16 @@ private fun SwitchRow(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f),
             )
+            // Während der Verify-Phase einen kleinen Spinner statt/neben dem
+            // Switch zeigen, damit der User sieht dass der Befehl "übernommen
+            // wird" und nicht ungeduldig nochmal tippt.
+            if (pending) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp,
+                )
+                Spacer(Modifier.size(16.dp))
+            }
             Switch(
                 checked = checked,
                 // Toggling is owned by the Card's onClick — having BOTH

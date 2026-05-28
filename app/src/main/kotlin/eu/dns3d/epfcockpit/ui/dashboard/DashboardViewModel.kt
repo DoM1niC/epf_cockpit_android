@@ -5,13 +5,14 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import eu.dns3d.epfcockpit.ble.BleRepository
 import eu.dns3d.epfcockpit.ble.ConnectionState
+import eu.dns3d.epfcockpit.ble.ParkPhase
 import eu.dns3d.epfcockpit.ble.Telemetry
 import eu.dns3d.epfcockpit.data.SettingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -23,15 +24,15 @@ enum class RideMode { Stand, Kickstart }
 data class DashboardUiState(
     val telemetry: Telemetry? = null,
     /**
-     * Local parking state — seeded once from the first telemetry frame after
-     * connect (where Bit 5 reliably reflects the physical park lock), then
-     * updated ONLY via user taps on the Parking switch. We can't keep
-     * mirroring the telemetry bit live because Mode frames (A2/82) also
-     * flip Bit 5 even though the physical park lock doesn't actually move
-     * with mode changes — that would make the switch jump around for the
-     * wrong reason.
+     * Verifizierter Park-Zustand aus [BleRepository.parkingDisplay]: das echte
+     * Telemetrie-Bit (mit optimistischem Ziel nur während des kurzen Verify-
+     * Fensters). `null` bis zum ersten Telemetrie-Frame / nach Disconnect.
      */
-    val parking: Boolean = false,
+    val parking: Boolean? = null,
+    /** True während ein Park-/Mode-Befehl gegen die Telemetrie verifiziert wird. */
+    val parkPending: Boolean = false,
+    /** True wenn der letzte Park-/Mode-Befehl nicht bestätigt werden konnte. */
+    val parkFailed: Boolean = false,
     /**
      * Ride mode is NOT reflected in telemetry — tracked purely client-side.
      */
@@ -64,8 +65,6 @@ class DashboardViewModel @Inject constructor(
         .map { (it?.speedKmh ?: 0f) > 1.0f }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    private var initialParkingSeeded = false
-
     init {
         // Ride-Mode live aus dem SettingsStore beobachten — so spiegelt der
         // Segmented Button auch Aenderungen vom Widget / Quick-Tile / einem
@@ -76,26 +75,28 @@ class DashboardViewModel @Inject constructor(
                 _state.update { it.copy(rideMode = mode) }
             }
         }
+        // Telemetrie nur zur Anzeige durchreichen — der Park-Zustand kommt jetzt
+        // ausschliesslich aus dem ParkController (verifiziert), nicht mehr aus
+        // einem einmalig geseedeten lokalen Bit.
         viewModelScope.launch {
-            ble.telemetry.filterNotNull().collect { telemetry ->
-                _state.update {
-                    val parking = if (!initialParkingSeeded) {
-                        initialParkingSeeded = true
-                        telemetry.parking
-                    } else it.parking
-                    it.copy(telemetry = telemetry, parking = parking)
-                }
-            }
+            ble.telemetry.collect { t -> _state.update { it.copy(telemetry = t) } }
         }
-        // Externe Park-Trigger (Widget, Quick-Tile, Service-Action) reflektieren
-        // damit der Parking-Switch im Dashboard mitwandert. Wir warten nicht
-        // auf das Telemetry-Bit weil das durch Mode-Frames mit-flippt und der
-        // Switch sonst springt — der zuletzt ausgeloeste Befehl ist die
-        // sauberste Quelle.
+        // Verifizierter Park-Zustand + Phase: parkingDisplay ist die einzige
+        // Wahrheit (echtes Telemetrie-Bit, mit optimistischem Ziel waehrend des
+        // Verify-Fensters), parkPhase liefert Pending/Failed fuer die UI. Gilt
+        // fuer ALLE Quellen (Dashboard-Tap, Widget, Quick-Tile, Service) weil
+        // die alle durch denselben Controller laufen.
         viewModelScope.launch {
-            ble.lastIssuedParking.filterNotNull().collect { issued ->
-                _state.update { it.copy(parking = issued) }
-            }
+            combine(ble.parkingDisplay, ble.parkPhase) { disp, phase -> disp to phase }
+                .collect { (disp, phase) ->
+                    _state.update {
+                        it.copy(
+                            parking = disp,
+                            parkPending = phase is ParkPhase.Pending,
+                            parkFailed = phase is ParkPhase.Failed,
+                        )
+                    }
+                }
         }
         // Trip-Recording wandert in TripCoordinator (@Singleton) — überlebt
         // Screen-Navigation und FGS-Backgrounding. Diese VM kümmert sich nur
@@ -103,9 +104,11 @@ class DashboardViewModel @Inject constructor(
     }
 
     fun toggleParking() {
-        val next = !_state.value.parking
-        _state.update { it.copy(parking = next) }
-        ble.setParking(next)
+        // Den ECHTEN/Ziel-Zustand invertieren, nicht eine eingefrorene lokale
+        // Kopie — das allein killt schon den Doppel-Tap. Den Rest (Verify +
+        // Retry + Anzeige) macht der ParkController.
+        val base = ble.parkingDisplay.value ?: false
+        ble.setParking(!base)
     }
 
     fun setRideMode(mode: RideMode) {

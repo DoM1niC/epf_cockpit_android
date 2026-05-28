@@ -17,7 +17,9 @@ import eu.dns3d.epfcockpit.MainActivity
 import eu.dns3d.epfcockpit.R
 import eu.dns3d.epfcockpit.ble.BleRepository
 import eu.dns3d.epfcockpit.ble.ConnectionState
+import eu.dns3d.epfcockpit.ble.Telemetry
 import eu.dns3d.epfcockpit.data.LocationCollector
+import eu.dns3d.epfcockpit.data.SettingsStore
 import eu.dns3d.epfcockpit.widget.UnlockTileService
 import eu.dns3d.epfcockpit.widget.UnlockWidgetProvider
 import eu.dns3d.epfcockpit.widget.WidgetStateHolder
@@ -60,14 +62,27 @@ class EpfConnectionService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var observerJob: Job? = null
 
+    /** Zusammengefasster Observer-State (combine hat kein Quadruple). */
+    private data class ObsState(
+        val t: Telemetry?,
+        val c: ConnectionState,
+        val s: SettingsStore.Snapshot,
+        val park: Boolean?,
+    )
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         startInForeground(initialNotification())
         observerJob = scope.launch {
-            combine(ble.telemetry, ble.connection, settings.flow) { t, c, s -> Triple(t, c, s) }
-                .collect { (t, c, s) ->
+            // parkingDisplay (verifizierter Park-Zustand aus dem ParkController)
+            // statt des rohen Telemetrie-Bits — so spiegeln Widget/Tile denselben
+            // bestätigten Zustand wie das Dashboard, inkl. Failed→Realität.
+            combine(ble.telemetry, ble.connection, settings.flow, ble.parkingDisplay) { t, c, s, park ->
+                ObsState(t, c, s, park)
+            }
+                .collect { (t, c, s, park) ->
                     val title = when (c) {
                         is ConnectionState.Connected ->
                             if (c.authenticated) "E-Scooter verbunden" else "E-Scooter – nicht authentifiziert"
@@ -87,14 +102,14 @@ class EpfConnectionService : Service() {
                     WidgetStateHolder.update(
                         connected = isConnected,
                         authenticated = isAuth,
-                        parking = t?.parking,
+                        parking = park,
                         rideModeStand = s.rideModeStand,
                     )
                     UnlockWidgetProvider.pushState(
                         context = this@EpfConnectionService,
                         connected = isConnected,
                         authenticated = isAuth,
-                        parking = t?.parking,
+                        parking = park,
                         rideModeStand = s.rideModeStand,
                     )
                     UnlockTileService.requestRefresh(this@EpfConnectionService)
@@ -107,7 +122,9 @@ class EpfConnectionService : Service() {
         when (intent?.action) {
             ACTION_UNLOCK -> handleAction { ble.setParking(false) }
             ACTION_TOGGLE_PARK -> scope.launch {
-                val current = ble.telemetry.value?.parking ?: false
+                // Vom verifizierten Anzeigewert toggeln (nicht vom rohen
+                // Telemetrie-Bit), damit der Toggle konsistent zum Dashboard ist.
+                val current = ble.parkingDisplay.value ?: false
                 handleAction { ble.setParking(!current) }
             }
             ACTION_TOGGLE_RIDE_MODE -> scope.launch {
