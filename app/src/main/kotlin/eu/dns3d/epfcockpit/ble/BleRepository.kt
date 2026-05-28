@@ -82,15 +82,12 @@ class BleRepository @Inject constructor(
     val voiceOff: StateFlow<Boolean?> = _voiceOff.asStateFlow()
 
     /**
-     * Verify-after-write fuer Park/Mode. Setzt jedes Park-/Mode-Frame ab und
-     * verifiziert gegen das Telemetrie-Bit (Status [22] & 0x20), wiederholt bei
-     * verlorenem Frame, und liefert den ECHTEN bestaetigten Zustand statt eines
-     * optimistischen. [parkingDisplay] ist die einzige Quelle die jede
-     * Oberflaeche (Dashboard, Tile, Widget, Service) anzeigt; [parkPhase] gibt
-     * Pending/Confirmed/Failed fuer eine Lade-/Fehleranzeige.
+     * Intent-basierter Park-Zustand. Das Telemetrie-Bit 5 ist mehrdeutig
+     * (geparkt vs Stand-Mode teilen sich das Bit), daher tracken wir Park als
+     * Intent + blind retry gegen verlorene Frames (siehe [ParkController]).
+     * [parkingDisplay] ist die einzige Quelle die jede Oberfläche anzeigt.
      */
     private val parkController = ParkController(scope, manager.telemetry, manager::writeLowFrame)
-    val parkPhase: StateFlow<ParkPhase> = parkController.phase
     val parkingDisplay: StateFlow<Boolean?> = parkController.parkingDisplay
 
     /**
@@ -100,6 +97,13 @@ class BleRepository @Inject constructor(
      */
     @Volatile private var cachedMaxSpeedKmh: Int = 20
 
+    /**
+     * Live-Cache des Ride-Mode (Stand vs Kick). Park-OFF muss den aktuell
+     * gewählten Mode bewahren — sonst wechselt ein Park-OFF ungewollt auf Kick,
+     * weil der Park-OFF-Frame (0x82) byte-identisch mit dem Kick-Frame ist.
+     */
+    @Volatile private var cachedRideModeStand: Boolean = true
+
     init {
         // Settings → Cache spiegeln, damit Frame-Builder synchron lesen können
         // ohne Coroutine-Hop. Erste Emission liefert auch sofort den Persistenz-
@@ -107,6 +111,7 @@ class BleRepository @Inject constructor(
         scope.launch {
             settings.flow.collect { snap ->
                 cachedMaxSpeedKmh = snap.gear3MaxKmh.coerceIn(1, 40)
+                cachedRideModeStand = snap.rideModeStand
             }
         }
         // Connection-Lifecycle vom Nordic-Manager beobachten — sonst bleibt
@@ -477,10 +482,15 @@ class BleRepository @Inject constructor(
 
     fun setParking(on: Boolean) {
         val g3 = cachedMaxSpeedKmh
-        val frame = if (on) ControlFrames.parkingOn(g3) else ControlFrames.parkingOff(g3)
-        // Durch den ParkController: sendet + verifiziert gegen die Telemetrie +
-        // wiederholt bei verlorenem Frame. Kein optimistisches Lügen mehr.
-        parkController.request(target = on, frame = frame, label = if (on) "park-on" else "park-off")
+        val frame = if (on) {
+            ControlFrames.parkingOn(g3)            // 0x22 — parken
+        } else {
+            // Park-OFF im aktuell gewählten Mode senden, damit ein Park-OFF nicht
+            // ungewollt auf Kick wechselt: der generische parkingOff-Frame (0x82)
+            // IST der Kick-Frame. Stand → 0xA2 (entparkt + Stand), Kick → 0x82.
+            if (cachedRideModeStand) ControlFrames.modeStandStop(g3) else ControlFrames.modeKickStart(g3)
+        }
+        parkController.setParking(target = on, frame = frame, label = if (on) "park-on" else "park-off")
     }
 
     /**

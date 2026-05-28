@@ -4,105 +4,55 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.coroutines.coroutineContext
 
 /**
- * Phase einer Park-/Mode-Aktion. Macht den "konnte nicht bestätigt"-Zustand
- * erstklassig, sodass auch Widget/Quick-Tile/Notification eine Pending-/Fail-
- * Anzeige bekommen können, ohne eigene Logik zu erfinden.
- */
-sealed interface ParkPhase {
-    /** Nichts in Arbeit — der angezeigte Wert spiegelt live die Telemetrie. */
-    data object Idle : ParkPhase
-    /** Frame(s) gesendet, warten dass das Telemetrie-Bit `target` erreicht. */
-    data class Pending(val target: Boolean, val attempt: Int) : ParkPhase
-    /** Telemetrie hat den gewünschten Zustand bestätigt. */
-    data class Confirmed(val value: Boolean) : ParkPhase
-    /** Nach allen Retries nicht bestätigt — Anzeige fällt auf den echten Wert zurück. */
-    data class Failed(val target: Boolean, val observed: Boolean) : ParkPhase
-}
-
-/**
- * Verify-after-write für den Park-/Mode-Zustand des Pulse-Plus-Controllers.
+ * Park-Zustand des Pulse-Plus-Controllers — INTENT-basiert.
  *
- * Hintergrund: Steuerframes gehen fire-and-forget mit WRITE_TYPE_NO_RESPONSE
- * raus — es gibt KEINE Bestätigung, dass der Controller ein Frame angewendet
- * hat. Geht ein Park-Frame verloren, blieb die UI früher auf dem optimistischen
- * Wert hängen, und der nächste Tap invertierte diese Lüge → der User musste
- * doppelt schalten.
+ * Hardware-Eigenheit (empirisch bestätigt durch Tests am echten Roller): das
+ * Telemetrie-Statusbyte Bit 5 ist KEIN verlässlicher Park-Indikator. Es gibt
+ * drei Frames für drei Zustände:
  *
- * Die einzige verlässliche Rückmeldung ist das Telemetrie-Statusbyte [22] Bit 5
- * (0x20), das ~alle 600 ms streamt. Dieser Controller:
- *   1. setzt das Frame ab,
- *   2. wartet bis ein FRISCHES Telemetrie-Frame `target` zeigt (bis [PER_ATTEMPT_MS]),
- *   3. wiederholt das Frame bei Timeout (bis [MAX_ATTEMPTS] gesamt),
- *   4. landet in Confirmed oder Failed — in BEIDEN Fällen zeigt die UI danach
- *      den ECHTEN Telemetrie-Wert, nie eine Lüge.
+ *   0x22  Parking ON   → geparkt          (Telemetrie Bit 5 = 1)
+ *   0x82  Kick-Start   → entparkt, Kick   (Telemetrie Bit 5 = 0)
+ *   0xA2  Stand-Stop   → entparkt, Stand  (Telemetrie Bit 5 = 1)
  *
- * Der Park-Toggle ([BleRepository.setParking]) läuft durch die Verify-Logik.
- * Mode-/Max-Speed-Frames (Stand/Kick) DEAKTIVIEREN physisch das Parken — der
- * Park-Switch muss also auf "entparkt" mitziehen, aber OHNE Spinner/Fehler am
- * Park-Control (das wäre die falsche Stelle für Mode-Feedback). Dafür gibt es
- * [notePark], das den Latch direkt setzt. Wir folgen NICHT live dem Telemetrie-
- * Bit 5, weil das durch den Mode mehrdeutig ist (siehe [parkingDisplay]/[_latch]).
+ * Bit 5 = 1 bedeutet also "geparkt ODER Stand-Mode" — mehrdeutig. Ein Verify
+ * gegen Bit 5 würde Stand-Mode fälschlich als geparkt sehen (und umgekehrt).
+ * Deshalb tracken wir den Park-Zustand als INTENT (was zuletzt kommandiert
+ * wurde), nicht aus der Telemetrie.
+ *
+ * Gegen verlorene fire-and-forget-Writes (WRITE_TYPE_NO_RESPONSE, kein Ack)
+ * senden wir jedes Park-Kommando mehrfach (blind retry). Das war die Ursache
+ * des ursprünglichen Doppel-Tap-Problems — ein einzelnes verlorenes Frame ließ
+ * App-Anzeige und Roller auseinanderlaufen.
  */
 class ParkController(
     private val scope: CoroutineScope,
     private val telemetry: StateFlow<Telemetry?>,
     private val writeFrame: (frame: ByteArray, label: String) -> Unit,
 ) {
-    private val _phase = MutableStateFlow<ParkPhase>(ParkPhase.Idle)
-    val phase: StateFlow<ParkPhase> = _phase.asStateFlow()
-
-    /**
-     * Letzter BEKANNTER Park-Zustand (Latch). Wird einmalig aus dem ersten
-     * Telemetrie-Frame geseedet und danach NUR durch einen bestätigten
-     * Park-Toggle aktualisiert.
-     *
-     * WICHTIG — warum kein Live-Folgen der Telemetrie: das Statusbyte-Bit 5 ist
-     * durch den Mode mehrdeutig. Ein Mode-Frame flippt Bit 5 mit, ohne dass das
-     * den echten Park-Zustand 1:1 abbildet — würde der Switch dem Bit live
-     * folgen, sprang er unvorhersehbar bei Stand/Kick-Taps. Direkt NACH einem
-     * Park-Frame ist Bit 5 dagegen korrekt (das Frame überschreibt das ganze
-     * Flags-Byte) — deshalb verifizieren wir Park-Toggles gegen die Telemetrie
-     * und latchen nur dann. Mode-Wechsel aktualisieren den Latch direkt über
-     * [notePark]. `null` vor dem ersten Frame / nach Disconnect.
-     */
     private val _latch = MutableStateFlow<Boolean?>(null)
 
     /**
-     * Der Wert den JEDE Oberfläche (Dashboard, Tile, Widget, Service) anzeigt:
-     *   - Pending → optimistisches Ziel (Switch springt während Verify nicht)
-     *   - sonst   → der Latch (zuletzt bestätigter Park-Zustand)
-     * So bewegt ein Mode-Wechsel den Park-Switch NICHT, und ein verlorener
-     * Park-Toggle (Failed) lässt den Switch auf dem echten letzten Wert stehen
-     * statt zu lügen — was den Doppel-Tap killt.
+     * Angezeigter Park-Zustand für JEDE Oberfläche (Dashboard, Tile, Widget,
+     * Service). Intent-Latch: gesetzt durch Park-Toggle und durch
+     * Mode-Seiteneffekte ([notePark]). `null` vor dem ersten Telemetrie-Frame /
+     * nach Disconnect — die UI zeigt dann "unbekannt" statt eines erfundenen Werts.
      */
-    val parkingDisplay: StateFlow<Boolean?> =
-        combine(_phase, _latch) { p, latch ->
-            if (p is ParkPhase.Pending) p.target else latch
-        }.stateIn(scope, SharingStarted.Eagerly, _latch.value)
+    val parkingDisplay: StateFlow<Boolean?> = _latch.asStateFlow()
 
-    private var job: Job? = null
-    private var settleJob: Job? = null
+    private var sendJob: Job? = null
 
     init {
-        // Latch einmalig aus dem ersten Telemetrie-Frame seeden. Danach NICHT
-        // mehr der Telemetrie folgen (Mode-Kontamination) — nur bestätigte
-        // Park-Toggles aktualisieren den Latch. Nach Disconnect (Latch = null,
-        // Telemetrie wird genullt) re-seedet das nächste Frame auf Reconnect.
+        // Initial-Seed aus dem ersten Telemetrie-Frame. Bit 5 ist mehrdeutig
+        // (geparkt vs Stand), als Startwert aber besser als nichts — ein Tap
+        // korrigiert. Re-seedet auf Reconnect (Latch wird bei Disconnect null,
+        // Telemetrie wird genullt → nächstes Frame seedet neu).
         scope.launch {
             telemetry.filterNotNull().collect { t ->
                 if (_latch.value == null) _latch.value = t.parking
@@ -111,107 +61,41 @@ class ParkController(
     }
 
     /**
-     * Park/Mode auf [target] setzen und gegen die Telemetrie verifizieren.
-     * Storniert eine laufende Verifikation (letzte Aktion gewinnt) — Nordic
-     * serialisiert die GATT-Writes ohnehin, das hier killt nur die alte
-     * Verify-Coroutine, damit nicht zwei Loops auf _phase rennen.
+     * Park-Kommando absetzen: Latch sofort auf [target] (optimistisch), [frame]
+     * mehrfach senden (blind retry gegen verlorene NO_RESPONSE-Writes).
      */
-    fun request(target: Boolean, frame: ByteArray, label: String) {
-        job?.cancel()
-        settleJob?.cancel()
-        job = scope.launch { verify(target, frame, label) }
+    fun setParking(target: Boolean, frame: ByteArray, label: String) {
+        _latch.value = target
+        sendJob?.cancel()
+        sendJob = scope.launch {
+            repeat(RESENDS) { i ->
+                writeFrame(frame, label)
+                if (i < RESENDS - 1) delay(RESEND_GAP_MS)
+            }
+            Log.d(TAG, "park frame sent ${RESENDS}x: $label target=$target")
+        }
     }
 
     /**
-     * Park-Latch direkt setzen, OHNE Verify/Pending. Für bekannte Seiteneffekte
-     * anderer Frames: ein Mode-/Speed-Frame (Stand/Kick) deaktiviert physisch
-     * das Parken, also soll der Park-Switch sofort auf "entparkt" mitziehen —
-     * aber ohne Spinner/Fehlertext am Park-Control (das wäre die falsche Stelle
-     * für ein Mode-Feedback). Storniert eine laufende Park-Verifikation, weil
-     * der Mode-Frame deren Ergebnis ohnehin überschreibt.
+     * Park-Latch direkt setzen, ohne eigenen Frame-Send. Für bekannte
+     * Seiteneffekte anderer Kommandos: ein Mode-/Speed-Frame (Stand/Kick)
+     * entparkt physisch, also soll der Park-Switch sofort auf "entparkt"
+     * mitziehen. Den Mode-Frame selbst sendet der Aufrufer.
      */
     fun notePark(value: Boolean) {
-        job?.cancel()
-        settleJob?.cancel()
-        _phase.value = ParkPhase.Idle
         _latch.value = value
     }
 
-    /** Vom Disconnect-Observer aufgerufen — nie ein Pending über einen Link-Verlust leaken. */
+    /** Vom Disconnect-Observer: Latch invalidieren, damit der nächste Scooter neu geseedet wird. */
     fun onDisconnected() {
-        job?.cancel()
-        settleJob?.cancel()
-        _phase.value = ParkPhase.Idle
-        // Latch invalidieren, damit der nächste verbundene Scooter neu geseedet
-        // wird statt den Park-Zustand des vorigen anzuzeigen.
+        sendJob?.cancel()
         _latch.value = null
-    }
-
-    private suspend fun verify(target: Boolean, frame: ByteArray, label: String) {
-        repeat(MAX_ATTEMPTS) { i ->
-            // Liveness ZUERST prüfen, bevor wir Pending schreiben. _phase-Writes
-            // laufen auf Dispatchers.Default (Repo-Scope ohne Dispatcher), also
-            // potenziell auf einem anderen Thread als ein paralleles
-            // onDisconnected()/request(). Ohne diesen Guard könnte die Schleife
-            // nach einem cancel + _phase=Idle noch ein Phantom-Pending setzen,
-            // das den Disconnect überlebt.
-            coroutineContext.ensureActive()
-            _phase.value = ParkPhase.Pending(target, attempt = i + 1)
-            // Aktuelles Frame VOR dem Write festhalten. StateFlow re-emittiert
-            // seinen aktuellen Wert an neue Collector — ohne diesen Guard würde
-            // .first{} sofort gegen das alte Pre-Write-Frame "bestätigen", wenn
-            // target zufällig schon dem alten Bit entspricht (= der Lost-Write-
-            // Fall). dropWhile{ it === baseline } erzwingt ein FRISCHES Frame.
-            val baseline = telemetry.value
-            writeFrame(frame, label)
-            val confirmed = withTimeoutOrNull(PER_ATTEMPT_MS) {
-                telemetry.filterNotNull()
-                    .dropWhile { it === baseline }
-                    .first { it.parking == target }
-            }
-            // Falls wir genau jetzt von einer neueren request() storniert wurden,
-            // kein veraltetes Confirmed mehr schreiben.
-            coroutineContext.ensureActive()
-            if (confirmed != null) {
-                // Bestätigt → Latch aktualisieren (die einzige Stelle die ihn
-                // außer dem initialen Seed verschiebt).
-                _latch.value = target
-                _phase.value = ParkPhase.Confirmed(target)
-                scheduleSettle(ParkPhase.Confirmed(target), SETTLE_MS)
-                return
-            }
-            Log.w(TAG, "park verify timeout attempt=${i + 1}/$MAX_ATTEMPTS target=$target label=$label")
-        }
-        coroutineContext.ensureActive()
-        val observed = telemetry.value?.parking ?: target
-        Log.w(TAG, "park NOT confirmed after $MAX_ATTEMPTS attempts target=$target observed=$observed")
-        _phase.value = ParkPhase.Failed(target, observed)
-        scheduleSettle(ParkPhase.Failed(target, observed), FAILED_LINGER_MS)
-    }
-
-    /**
-     * Confirmed/Failed nach kurzer Zeit zurück auf Idle, sodass die Anzeige
-     * wieder dem Latch folgt. SEPARATE Coroutine + Identitäts-Check,
-     * damit ein superseding request() (das schon ein frisches Pending gesetzt
-     * hat) nicht überschrieben wird.
-     */
-    private fun scheduleSettle(expected: ParkPhase, afterMs: Long) {
-        settleJob?.cancel()
-        settleJob = scope.launch {
-            delay(afterMs)
-            if (_phase.value == expected) _phase.value = ParkPhase.Idle
-        }
     }
 
     private companion object {
         const val TAG = "ParkController"
-        /** Fenster pro Versuch ≈ 1.5 Telemetrie-Zyklen (Telemetrie ~600 ms). */
-        const val PER_ATTEMPT_MS = 900L
-        /** 1 initialer Write + 2 Retries — deckt zwei unabhängige Drops ab. */
-        const val MAX_ATTEMPTS = 3
-        /** Kurzes Confirmed-Fenster, dann zurück auf live Telemetrie. */
-        const val SETTLE_MS = 400L
-        /** Failed bleibt länger sichtbar, damit die UI den Fehler zeigen kann. */
-        const val FAILED_LINGER_MS = 3_000L
+        /** Wie oft ein Park-Frame gesendet wird (gegen verlorene NO_RESPONSE-Writes). */
+        const val RESENDS = 3
+        const val RESEND_GAP_MS = 150L
     }
 }
