@@ -1,8 +1,12 @@
 import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+    // AGP 9 bringt Kotlin-Support eingebaut mit — das separate
+    // org.jetbrains.kotlin.android-Plugin darf nicht mehr angewendet werden
+    // (siehe https://kotl.in/gradle/agp-built-in-kotlin). Compiler-Plugins
+    // (Compose, Serialization, KSP) bleiben.
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.ksp)
     alias(libs.plugins.hilt)
@@ -54,7 +58,10 @@ val hasReleaseKeystore = resolvedSigning != null
 
 android {
     namespace = "eu.dns3d.epfcockpit"
-    compileSdk = 36
+    // compileSdk 37 nötig: die gebumpten Deps (compose 1.12-alpha, core-ktx
+    // 1.19.0) verlangen Compile gegen API 37. targetSdk bleibt 36 (kein Opt-in
+    // in neues Runtime-Verhalten).
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "eu.dns3d.epfcockpit"
@@ -98,20 +105,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 
-    // Hinweis: AGP 9 deprecatet den android.kotlinOptions-Block (Migration nach
-    // kotlin { compilerOptions { … } }). Funktioniert hier noch mit Deprecation-
-    // Warnung; bei Bedarf beim ersten Build umstellen.
-    kotlinOptions {
-        jvmTarget = "21"
-        freeCompilerArgs += listOf(
-            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
-            "-opt-in=androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
-            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
-            "-opt-in=androidx.compose.foundation.layout.ExperimentalLayoutApi",
-            "-opt-in=androidx.compose.animation.ExperimentalAnimationApi",
-        )
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
@@ -121,6 +114,21 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+}
+
+// AGP-9-Built-in-Kotlin: Compiler-Optionen über die kotlin{}-Extension statt
+// des entfernten android.kotlinOptions-Blocks.
+kotlin {
+    compilerOptions {
+        jvmTarget = JvmTarget.JVM_21
+        freeCompilerArgs.addAll(
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",
+            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi",
+            "-opt-in=androidx.compose.foundation.layout.ExperimentalLayoutApi",
+            "-opt-in=androidx.compose.animation.ExperimentalAnimationApi",
+        )
     }
 }
 
@@ -147,6 +155,11 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
+    // Dagger/Hilt-generierter Code referenziert @CanIgnoreReturnValue aus den
+    // errorprone-Annotations. Seit dem Toolchain-Bump (Hilt 2.60 + AGP-9-built-
+    // in-Kotlin) landet die Dependency nicht mehr automatisch im javac-Classpath
+    // der hiltJavaCompile-Task — daher explizit.
+    implementation("com.google.errorprone:error_prone_annotations:2.28.0")
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
