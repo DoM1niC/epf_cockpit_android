@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.util.Log
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import dagger.hilt.android.qualifiers.ApplicationContext
 import eu.dns3d.epfcockpit.ble.BleRepository
 import eu.dns3d.epfcockpit.ble.ConnectionState
@@ -40,6 +43,17 @@ class ForegroundController @Inject constructor(
                 .collect { shouldRun ->
                     if (shouldRun) startService() else stopService()
                 }
+        }
+        // App-Vordergrund/-Hintergrund an die BleRepository melden. Damit pausiert
+        // der Auto-Reconnect im Hintergrund und greift sich den Single-Link-Roller
+        // nicht weg, während der User in einer anderen App (z.B. der Hersteller-
+        // App) verbinden will. addObserver muss auf dem Main-Thread laufen —
+        // scope ist Main.immediate, also passt das.
+        scope.launch {
+            ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+                override fun onStart(owner: LifecycleOwner) = ble.onAppForegroundChanged(true)
+                override fun onStop(owner: LifecycleOwner) = ble.onAppForegroundChanged(false)
+            })
         }
     }
 

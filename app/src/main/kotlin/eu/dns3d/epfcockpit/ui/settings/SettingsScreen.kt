@@ -144,6 +144,17 @@ fun SettingsScreen(
                     }
                     Switch(checked = state.autoConnect, onCheckedChange = vm::setAutoConnect)
                 }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Hinweis: Solange diese App verbunden ist, kann sich keine andere " +
+                        "App (z.B. die Hersteller-App) mit dem Roller verbinden — er " +
+                        "advertised dann nicht mehr. Tippe im Dashboard auf das " +
+                        "Bluetooth-Symbol (Trennen), bevor du eine andere App nutzt. " +
+                        "Der Auto-Reconnect pausiert automatisch, sobald diese App im " +
+                        "Hintergrund ist.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Spacer(Modifier.height(12.dp))
                 // Lokaler Buffer + 400ms-Debounce. Direktes commit-on-keystroke
                 // wuerde durch den DataStore-Roundtrip die Anzeige hinterhinken

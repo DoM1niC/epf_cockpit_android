@@ -65,6 +65,29 @@ class BleRepository @Inject constructor(
     @Volatile var userDisconnected: Boolean = false
         private set
 
+    /**
+     * Ist die App gerade im Vordergrund? Gesetzt vom [eu.dns3d.epfcockpit.service.ForegroundController]
+     * via ProcessLifecycle. Steuert den Auto-Reconnect: solange die App im
+     * Hintergrund ist, starten wir KEINE neuen Reconnect-Versuche — sonst greift
+     * sich unsere App den Roller immer wieder, während der User in einer anderen
+     * App (z.B. der Hersteller-App) versucht sich zu verbinden. BLE-Peripherals
+     * wie der Hobbywing-Controller sind Single-Link: solange ein Central
+     * verbunden ist (oder aktiv connecten will), advertised der Roller nicht und
+     * ist für andere Apps "verschwunden".
+     *
+     * Eine bereits STEHENDE Verbindung bleibt im Hintergrund erhalten (Ride-
+     * Telemetrie bei Screen-off) — wir pausieren nur das erneute Greifen.
+     */
+    @Volatile private var appInForeground: Boolean = true
+
+    /**
+     * Merker: Ein Reconnect-Versuch wurde abgebrochen/übersprungen, weil die App
+     * im Hintergrund war. Beim Zurückkehren in den Vordergrund nehmen wir ihn
+     * wieder auf. Entkoppelt vom Connection-State, damit die Scan-Screen-eigene
+     * Auto-Connect-Logik nicht doppelt getriggert wird.
+     */
+    @Volatile private var reconnectPausedForBackground: Boolean = false
+
     private val _connection = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connection: StateFlow<ConnectionState> = _connection.asStateFlow()
 
@@ -319,11 +342,44 @@ class BleRepository @Inject constructor(
 
     fun disconnect() {
         userDisconnected = true
+        reconnectPausedForBackground = false
         reconnectJob?.cancel()
         reconnectJob = null
         stopHeartbeat()
         manager.requestDisconnect()
+        // Disconnected → der ForegroundController stoppt den FGS, das BLE-Radio
+        // wird freigegeben, und der Roller advertised wieder für andere Apps.
         _connection.value = ConnectionState.Disconnected
+    }
+
+    /**
+     * Vom [eu.dns3d.epfcockpit.service.ForegroundController] aufgerufen, wenn die
+     * App in den Vorder-/Hintergrund wechselt (ProcessLifecycle).
+     *
+     *  - Hintergrund: laufenden Reconnect-Versuch abbrechen und das Funk-Radio
+     *    freigeben, damit andere Apps (Hersteller-App) den Roller finden können.
+     *    Eine stehende, authentifizierte Verbindung lassen wir leben.
+     *  - Vordergrund: einen im Hintergrund pausierten Reconnect wieder aufnehmen.
+     */
+    fun onAppForegroundChanged(foreground: Boolean) {
+        if (appInForeground == foreground) return
+        appInForeground = foreground
+        if (!foreground) {
+            // Nur eingreifen wenn wir gerade NICHT stabil verbunden sind —
+            // also beim Scannen/Connecten (reconnectJob aktiv) oder nach einem
+            // Abriss (Failed). Eine laufende Verbindung bleibt unangetastet.
+            val reconnecting = reconnectJob?.isActive == true
+            if (reconnecting || _connection.value is ConnectionState.Failed) {
+                Log.i(TAG, "App im Hintergrund — Reconnect pausiert, Funk freigegeben")
+                reconnectJob?.cancel()
+                reconnectJob = null
+                reconnectPausedForBackground = true
+            }
+        } else if (reconnectPausedForBackground) {
+            Log.i(TAG, "App im Vordergrund — pausierten Reconnect aufnehmen")
+            reconnectPausedForBackground = false
+            maybeStartAutoReconnect()
+        }
     }
 
     /**
@@ -336,12 +392,37 @@ class BleRepository @Inject constructor(
      * Im Gegensatz zur ScanVM lebt das hier im Repository, also auch wenn
      * der User gerade auf Dashboard / Settings / History ist statt auf Scan.
      */
-    private fun maybeStartAutoReconnect() {
-        if (userDisconnected) return
+    /**
+     * Vom Service bei einer EXPLIZITEN User-Aktion (Widget / Quick-Tile)
+     * aufgerufen. Erzwingt einen Reconnect-Versuch auch wenn die App im
+     * Hintergrund ist oder der User vorher manuell getrennt hat — eine bewusste
+     * Aktion darf den Roller greifen, anders als der passive Auto-Reconnect.
+     */
+    fun kickReconnectForAction() {
+        userDisconnected = false
+        reconnectPausedForBackground = false
+        if (_connection.value !is ConnectionState.Connected) {
+            maybeStartAutoReconnect(force = true)
+        }
+    }
+
+    private fun maybeStartAutoReconnect(force: Boolean = false) {
+        if (!force && userDisconnected) return
+        // Im Hintergrund NICHT passiv reconnecten — sonst greifen wir den Roller
+        // weg während der User in einer anderen App ist. Merken, dass wir wollten,
+        // damit der Rückkehr-in-den-Vordergrund den Versuch nachholt. Ein
+        // erzwungener Versuch (force) ignoriert das Gate.
+        if (!force && !appInForeground) {
+            reconnectPausedForBackground = true
+            Log.i(TAG, "auto-reconnect übersprungen (App im Hintergrund)")
+            return
+        }
         if (reconnectJob?.isActive == true) return
         reconnectJob = scope.launch {
             val snap = settings.flow.first()
-            if (!snap.autoConnect) {
+            // autoConnect=off unterdrückt nur den AUTOMATISCHEN Reconnect — ein
+            // erzwungener Versuch (Widget/Tile-Tap) verbindet trotzdem.
+            if (!force && !snap.autoConnect) {
                 Log.i(TAG, "auto-reconnect skipped (autoConnect=off)")
                 return@launch
             }
@@ -352,14 +433,18 @@ class BleRepository @Inject constructor(
             val savedName = snap.lastScooterName
             val savedPin = snap.savedPin
 
-            // Loop forever (mit Exponential-Backoff) bis entweder:
+            // Begrenzte Reconnect-Schleife (mit Exponential-Backoff) bis:
             //   - wir erfolgreich connected sind, oder
             //   - der User manuell trennt (userDisconnected = true), oder
-            //   - der Scope gecancelt wird (App-Shutdown)
-            // Sonst muss der User manuell auf "Suchen" tippen sobald der
-            // Scooter wieder an ist — genau die Beschwerde aus dem Bug-Report.
+            //   - die App in den Hintergrund geht (appInForeground = false), oder
+            //   - der Versuchs-Cap erreicht ist (MAX_RECONNECT_ATTEMPTS), oder
+            //   - der Scope gecancelt wird (App-Shutdown).
+            // Der Cap ist wichtig: ein EWIG laufender Reconnect greift sich den
+            // Single-Link-Roller immer wieder weg, sodass ihn andere Apps (z.B.
+            // die Hersteller-App) nie finden. Nach dem Cap geben wir den Funk
+            // frei; der User kann über das Bluetooth-Symbol neu suchen.
             var attempt = 0
-            while (isActive && !userDisconnected) {
+            while (isActive && !userDisconnected && (force || appInForeground) && attempt < MAX_RECONNECT_ATTEMPTS) {
                 attempt++
                 // Falls jemand parallel manuell connected hat — beenden.
                 if (_connection.value is ConnectionState.Connected) {
@@ -416,6 +501,23 @@ class BleRepository @Inject constructor(
                 Log.i(TAG, "auto-reconnect attempt #$attempt failed, waiting ${delayMs}ms")
                 kotlinx.coroutines.delay(delayMs)
             }
+
+            // Schleife normal beendet (kein erfolgreicher Connect, der via
+            // return@launch raus wäre). Warum?
+            if (userDisconnected) return@launch
+            if (!force && !appInForeground) {
+                // Hintergrund-Pause — beim Vordergrund-Wechsel nehmen wir wieder auf.
+                reconnectPausedForBackground = true
+                return@launch
+            }
+            // Sonst: Versuchs-Cap erreicht. Funk freigeben + dem User sagen,
+            // dass er manuell neu suchen kann.
+            if (_connection.value !is ConnectionState.Connected) {
+                Log.i(TAG, "auto-reconnect: Cap ($MAX_RECONNECT_ATTEMPTS Versuche) erreicht — pausiert, Funk freigegeben")
+                _connection.value = ConnectionState.Failed(
+                    "Roller nicht erreichbar – Auto-Suche pausiert, bitte erneut verbinden",
+                )
+            }
         }
     }
 
@@ -457,6 +559,17 @@ class BleRepository @Inject constructor(
 
     private companion object {
         const val TAG = "BleRepository"
+
+        /**
+         * Maximale Reconnect-Versuche pro Abriss-Episode, bevor wir aufgeben und
+         * den Funk freigeben. Mit dem Backoff (10/20/30/60/60 s) deckt das ~3 min
+         * ab — genug für "Roller war kurz aus der Reichweite", aber nicht ewig,
+         * damit andere Apps den Single-Link-Roller wieder bekommen können.
+         * Jeder neue Abriss startet eine frische Episode (Zähler zurück auf 0),
+         * transiente Aussetzer während einer Fahrt bekommen also immer ihr volles
+         * Budget.
+         */
+        const val MAX_RECONNECT_ATTEMPTS = 5
     }
 
     private fun startHeartbeat() {

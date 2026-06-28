@@ -211,3 +211,39 @@ Sollte nicht passieren — `EpfConnectionService.onTaskRemoved` ruft
   zu sehen sein
 - Wenn nicht: Service wurde nicht von unserem Activity-Task gestartet
   (z.B. Hilt-Race beim allerersten Start) — App neu starten reicht
+
+### Andere App (Hersteller-App) findet den Roller nicht mehr
+
+Symptom: Nach Nutzung des EPF Cockpit findet die offizielle App (oder eine
+andere Hobbywing-App) den Roller nicht mehr — sie listet zwar alle möglichen
+BLE-Geräte aus der Nachbarschaft, aber nicht den Scooter.
+
+Ursache: **Single-Link-BLE.** Der Hobbywing-Controller akzeptiert nur EINEN
+Central gleichzeitig und advertised nicht mehr, solange er verbunden ist (oder
+ein Central aktiv connecten will). Es ist **kein** Android-Bonding-Leak — die
+App ruft nirgends `createBond` auf, hinterlässt also keinen Pairing-Eintrag.
+Zwei Quellen halten den Link:
+
+1. Eine **stehende Verbindung** (App im Vordergrund verbunden, oder im
+   Hintergrund mit laufendem Foreground-Service).
+2. Der **Auto-Reconnect**, der den Roller nach einem Abriss wieder greift.
+
+Was die App dagegen tut (`BleRepository`):
+- **Reconnect pausiert im Hintergrund.** Sobald die App nicht im Vordergrund
+  ist (`ProcessLifecycle` via `ForegroundController` → `onAppForegroundChanged`),
+  startet kein neuer Reconnect-Versuch und ein laufender wird abgebrochen. Eine
+  bereits stehende Verbindung bleibt erhalten (Ride-Telemetrie bei Screen-off).
+- **Reconnect ist gekappt** (`MAX_RECONNECT_ATTEMPTS = 5`, ~3 min mit Backoff).
+  Danach gibt die App auf und gibt den Funk frei statt ewig zu greifen.
+
+Saubere Übergabe an eine andere App:
+- Im Dashboard auf das **Bluetooth-Symbol (Trennen)** tippen — `disconnect()`
+  setzt `userDisconnected`, stoppt Heartbeat + Foreground-Service und gibt den
+  GATT-Link frei. Danach advertised der Roller sofort wieder.
+- Oder die App aus den Recents **wegswipen** (`onTaskRemoved` → `exitProcess`).
+- Optional **Auto-Verbinden** in den Einstellungen ausschalten, wenn man oft
+  zwischen den Apps wechselt.
+
+Logcat-Filter: `adb logcat -s BleRepository:V ForegroundController:V`
+(Marker: `App im Hintergrund — Reconnect pausiert` /
+`auto-reconnect: Cap … erreicht — pausiert, Funk freigegeben`).

@@ -156,6 +156,9 @@ class EpfConnectionService : Service() {
                 return@launch
             }
             updateNotification("E-Scooter verbindet…", "Befehl wartet auf Verbindung")
+            // Bewusste Aktion (Widget/Tile) → Reconnect erzwingen, auch wenn die
+            // App im Hintergrund ist (der passive Auto-Reconnect pausiert dort).
+            ble.kickReconnectForAction()
             val ready = withTimeoutOrNull(10_000) {
                 ble.connection.first { it is ConnectionState.Connected && it.authenticated }
             }
