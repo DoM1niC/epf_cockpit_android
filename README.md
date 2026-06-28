@@ -216,7 +216,7 @@ data/           — DataStore (Settings), Room (Trip-Historie)
 di/             — Hilt-AppModule (Room-DB-Provider)
 ```
 
-- **Compose** + **Material 3 Expressive** (`androidx.compose.material3:1.4.0-alpha`)
+- **Compose** + **Material 3 Expressive** (`androidx.compose.material3:1.5.0-alpha`)
 - **MVVM** mit Hilt-injizierten ViewModels, `StateFlow` als Observable State
 - **Nordic Android BLE Library** kapselt GATT-Queue, Retries, Bonding-Fallen
 - **Room** für Fahrten-Historie, **DataStore Preferences** für App-Settings
@@ -224,9 +224,9 @@ di/             — Hilt-AppModule (Room-DB-Provider)
 ## Build
 
 Voraussetzungen:
-- JDK 17 (lokal) / JDK 21 (CI, wegen AGP 8.x core-for-system-modules)
-- Android SDK 35 (`compileSdk = 35`, `minSdk = 31`)
-- Gradle 8.11 via Wrapper
+- JDK 21 (lokal + CI) — `source/target/jvmTarget = 21`
+- Android SDK 36 (`compileSdk = 36`, `minSdk = 31`)
+- Gradle 9.5 via Wrapper (AGP 9.2)
 
 ```bash
 ./gradlew assembleDebug                 # Debug-APK

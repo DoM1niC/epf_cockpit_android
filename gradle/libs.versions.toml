@@ -1,23 +1,28 @@
 [versions]
-agp = "8.7.3"
-kotlin = "2.1.0"
-ksp = "2.1.0-1.0.29"
-hilt = "2.54"
-hiltNavigation = "1.2.0"
-coreKtx = "1.15.0"
-lifecycle = "2.8.7"
-activityCompose = "1.9.3"
-composeBom = "2024.12.01"
-material3 = "1.4.0-alpha04"
-navigationCompose = "2.8.5"
-coroutines = "1.9.0"
-room = "2.6.1"
-datastore = "1.1.1"
-nordicBle = "2.9.0"
-accompanistPermissions = "0.36.0"
-splashscreen = "1.0.1"
-okhttp = "4.12.0"
-kotlinxSerialization = "1.7.3"
+agp = "9.2.1"
+kotlin = "2.4.0"
+# KSP2-Ära: entkoppeltes Schema (kein "kotlin-ksp"-Präfix mehr). 2.3.9 ist die
+# zu Kotlin 2.4.0 gepaarte Version (KSP-Quickstart).
+ksp = "2.3.9"
+hilt = "2.60"
+hiltNavigation = "1.3.0"
+coreKtx = "1.19.0"
+lifecycle = "2.11.0"
+activityCompose = "1.13.0"
+composeBom = "2026.06.00"
+# Material3 bleibt explizit auf der 1.5.0-Alpha-Linie: stable 1.4.0 (vom BOM
+# gepinnt) hat die @ExperimentalMaterial3ExpressiveApi-Fläche entfernt, die diese
+# App nutzt. Stable 1.5.x existiert noch nicht.
+material3 = "1.5.0-alpha22"
+navigationCompose = "2.9.8"
+coroutines = "1.11.0"
+room = "2.8.4"
+datastore = "1.2.1"
+nordicBle = "2.11.0"
+accompanistPermissions = "0.37.3"
+splashscreen = "1.2.0"
+okhttp = "5.4.0"
+kotlinxSerialization = "1.11.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

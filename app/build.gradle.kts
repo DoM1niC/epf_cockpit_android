@@ -54,12 +54,12 @@ val hasReleaseKeystore = resolvedSigning != null
 
 android {
     namespace = "eu.dns3d.epfcockpit"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "eu.dns3d.epfcockpit"
         minSdk = 31
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
         vectorDrawables { useSupportLibrary = true }
@@ -94,12 +94,15 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
 
+    // Hinweis: AGP 9 deprecatet den android.kotlinOptions-Block (Migration nach
+    // kotlin { compilerOptions { … } }). Funktioniert hier noch mit Deprecation-
+    // Warnung; bei Bedarf beim ersten Build umstellen.
     kotlinOptions {
-        jvmTarget = "17"
+        jvmTarget = "21"
         freeCompilerArgs += listOf(
             "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",
             "-opt-in=androidx.compose.material3.ExperimentalMaterial3ExpressiveApi",

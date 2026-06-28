@@ -27,9 +27,8 @@ jobs:
           fetch-depth: 0
 
       - name: Setup JDK 21
-        # AGP 8.x mit Android-SDK 35/36 erwartet jlink aus JDK 21 für die
-        # core-for-system-modules.jar-Transform. sourceCompatibility bleibt
-        # 17 — JDK 21 kann Bytecode für Java 17 emittieren.
+        # AGP 9.x verlangt JDK 17+; Projekt kompiliert source/target/jvmTarget 21.
+        # JDK 21 liefert zugleich das jlink für die core-for-system-modules-Transform.
         uses: actions/setup-java@v4
         with:
           distribution: temurin
