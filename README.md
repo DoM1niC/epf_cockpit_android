@@ -273,6 +273,16 @@ Release-Build mit dem Debug-Key signiert.
 - escooter-treff.de Forenthread: https://www.escooter-treff.de/threads/zydtech-controller-bluetooth-protokoll-reverse-engineering.12207/
 - Offizielle ePowerFun-App (analysiert via Android HCI Snoop): `com.zydtech.epowerfun`
 
+## Spenden
+
+Das Projekt entsteht in der Freizeit und ist und bleibt Open Source. Wenn dir
+EPF Cockpit gefällt und du die Weiterentwicklung unterstützen magst, freue ich
+mich über eine kleine Spende:
+
+💛 **PayPal:** [paypal.me/dom1nic](https://www.paypal.com/paypalme/dom1nic)
+
+Danke! 🙏
+
 ## Autor
 
 DoM!niC — [git.3dns.eu/dom1nic/epf_cockpit_android](https://git.3dns.eu/dom1nic/epf_cockpit_android)
