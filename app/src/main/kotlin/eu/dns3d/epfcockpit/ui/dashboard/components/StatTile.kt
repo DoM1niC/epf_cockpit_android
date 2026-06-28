@@ -93,9 +93,10 @@ private fun ValueWithUnit(
         val avail = (maxWidthPx - unitWidthPx).coerceAtLeast(1f)
 
         // Only ever shrink, never enlarge; small safety margin so it never clips.
+        // (TextUnit * Float uses the member operator — no import needed, unlike Float * TextUnit.)
         val scale = if (valueWidthPx > avail) (avail / valueWidthPx) * 0.98f else 1f
         val fittedValueStyle =
-            if (scale < 1f) valueStyle.copy(fontSize = scale * valueStyle.fontSize) else valueStyle
+            if (scale < 1f) valueStyle.copy(fontSize = valueStyle.fontSize * scale) else valueStyle
 
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
