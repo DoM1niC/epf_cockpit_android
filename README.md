@@ -14,6 +14,11 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
 - Live-Leistung (Watt = U·I), Rekuperations-Anzeige
 - Spannung, Strom, Controller-Temperatur, Trip- und Gesamt-Kilometer
 - Bildschirm bleibt im Cockpit an (kein versehentliches Dimmen während der Fahrt)
+- **Layout-Switcher** (Settings): vier Dashboard-Layouts — **Standard** (großer
+  Tacho + Akku, scrollbar), **Kompakt** (alle Werte ohne Scrollen auf einem
+  Screen), **Fahrt** (riesiger Tacho + Akku, minimale Kacheln) und **Daten**
+  (nur Zahlen, keine runden Anzeigen). Jeweils für Hoch- und Querformat,
+  persistent über App-Neustart.
 
 ### Steuerung (sniff-verifiziert für Pulse Plus)
 - **Parking** ein/aus — Material-3-Switch, sniff-verifizierte Frames
@@ -181,8 +186,10 @@ Release-Keystore signiert und ersetzen eine bestehende Installation in-place.
 | Scan: BLE-Suche mit EPF/ePF/ZYD-Filter, Live-RSSI | Dashboard: Speed-Ring + Akku-Donut + Stat-Tiles |
 | <img src="screenshots/dashboard_2.webp" width="280" alt="Dashboard – Steuerung"> | <img src="screenshots/trips.webp" width="280" alt="Trips"> |
 | Steuerung: Parking-Switch, Modus-Toggle, Blinkerton | Trips: Fahrtenliste mit Zeitraum-Filter + Aggregat-Stats |
-| <img src="screenshots/settings.png" width="280" alt="Settings"> | |
-| Settings: Theme + Live-Streaming an Web-Dashboard + Max-Geschwindigkeit | |
+| <img src="screenshots/settings.png" width="280" alt="Settings"> | <img src="screenshots/layout_compact.png" width="280" alt="Layout Kompakt"> |
+| Settings: Theme + Layout-Switcher + Live-Streaming + Max-Geschwindigkeit | Layout **Kompakt**: alle Werte ohne Scrollen auf einem Screen |
+| <img src="screenshots/layout_drive.png" width="280" alt="Layout Fahrt"> | <img src="screenshots/layout_data.png" width="280" alt="Layout Daten"> |
+| Layout **Fahrt**: riesiger Tacho + Akku, nur die wichtigsten Werte | Layout **Daten**: nur Zahlen, keine runden Anzeigen |
 
 ## Technische Dokumentation
 
