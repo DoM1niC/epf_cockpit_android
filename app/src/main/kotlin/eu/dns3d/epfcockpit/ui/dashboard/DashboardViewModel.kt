@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import eu.dns3d.epfcockpit.ble.BleRepository
 import eu.dns3d.epfcockpit.ble.ConnectionState
 import eu.dns3d.epfcockpit.ble.Telemetry
+import eu.dns3d.epfcockpit.data.DashboardLayout
 import eu.dns3d.epfcockpit.data.SettingsStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,6 +31,8 @@ data class DashboardUiState(
      * Ride mode is NOT reflected in telemetry — tracked purely client-side.
      */
     val rideMode: RideMode = RideMode.Stand,
+    /** Vom User gewählte Layout-Variante; live aus dem SettingsStore. */
+    val dashboardLayout: DashboardLayout = DashboardLayout.STANDARD,
 )
 
 @HiltViewModel
@@ -66,6 +69,13 @@ class DashboardViewModel @Inject constructor(
             settings.flow.map { it.rideModeStand }.distinctUntilChanged().collect { stand ->
                 val mode = if (stand) RideMode.Stand else RideMode.Kickstart
                 _state.update { it.copy(rideMode = mode) }
+            }
+        }
+        // Layout-Variante live beobachten — Wechsel in den Einstellungen spiegelt
+        // sich sofort im Dashboard wider.
+        viewModelScope.launch {
+            settings.flow.map { it.dashboardLayout }.distinctUntilChanged().collect { layout ->
+                _state.update { it.copy(dashboardLayout = layout) }
             }
         }
         // Telemetrie nur zur Anzeige durchreichen — der Park-Zustand kommt jetzt

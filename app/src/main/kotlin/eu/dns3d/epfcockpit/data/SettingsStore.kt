@@ -17,6 +17,15 @@ private val Context.dataStore by preferencesDataStore(name = "epf_settings")
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 /**
+ * Dashboard-Layout-Variante, vom User in den Einstellungen wählbar.
+ *  STANDARD = das bisherige Layout (Default — bestehende Nutzer sehen keine Änderung).
+ *  KOMPAKT  = alle Werte auf einem Screen ohne Scrollen.
+ *  FAHRT    = riesiger Tacho + Akku, minimale Kacheln (Glance während der Fahrt).
+ *  DATEN    = nur Zahlen, keine runden Anzeigen (Diagnose/Technik).
+ */
+enum class DashboardLayout { STANDARD, KOMPAKT, FAHRT, DATEN }
+
+/**
  * App-level preferences. PIN is intentionally NOT stored encrypted — the same PIN
  * is sent in plaintext over BLE (per ZydDash analysis), so any disk encryption
  * here would be theatre. If you want stronger storage, wire EncryptedSharedPreferences
@@ -36,6 +45,8 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         /** Last ride mode the user picked (true = Stand Stop, false = Kick Start). */
         val rideModeStand: Boolean,
         val themeMode: ThemeMode,
+        /** Vom User gewählte Dashboard-Layout-Variante. Default STANDARD. */
+        val dashboardLayout: DashboardLayout,
         /** WebSocket-Endpoint des Node-Dashboards (z.B. ws://192.168.1.50:8787/ws/ingest). */
         val streamingUrl: String?,
         val streamingEnabled: Boolean,
@@ -70,6 +81,8 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             rideModeStand = p[KEY_RIDE_MODE_STAND] ?: true,
             themeMode = (p[KEY_THEME_MODE])?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
                 ?: ThemeMode.SYSTEM,
+            dashboardLayout = (p[KEY_DASHBOARD_LAYOUT])?.let { runCatching { DashboardLayout.valueOf(it) }.getOrNull() }
+                ?: DashboardLayout.STANDARD,
             streamingUrl = p[KEY_STREAMING_URL]?.takeIf { it.isNotBlank() },
             streamingEnabled = p[KEY_STREAMING_ENABLED] ?: false,
             streamingToken = p[KEY_STREAMING_TOKEN]?.takeIf { it.isNotBlank() },
@@ -124,6 +137,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         context.dataStore.edit { p -> p[KEY_THEME_MODE] = mode.name }
     }
 
+    suspend fun setDashboardLayout(mode: DashboardLayout) {
+        context.dataStore.edit { p -> p[KEY_DASHBOARD_LAYOUT] = mode.name }
+    }
+
     suspend fun setStreamingUrl(url: String?) {
         context.dataStore.edit { p ->
             val trimmed = url?.trim().orEmpty()
@@ -172,6 +189,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val KEY_G3 = intPreferencesKey("gear3_max_kmh")
         val KEY_RIDE_MODE_STAND = booleanPreferencesKey("ride_mode_stand")
         val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
+        val KEY_DASHBOARD_LAYOUT = stringPreferencesKey("dashboard_layout")
         val KEY_STREAMING_URL = stringPreferencesKey("streaming_url")
         val KEY_STREAMING_ENABLED = booleanPreferencesKey("streaming_enabled")
         val KEY_STREAMING_TOKEN = stringPreferencesKey("streaming_token")

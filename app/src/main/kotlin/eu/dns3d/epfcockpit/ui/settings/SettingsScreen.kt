@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.Speed
@@ -64,6 +65,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
+import eu.dns3d.epfcockpit.data.DashboardLayout
 import eu.dns3d.epfcockpit.data.ThemeMode
 import eu.dns3d.epfcockpit.streaming.TelemetryStreamer
 import kotlin.math.roundToInt
@@ -219,6 +221,30 @@ fun SettingsScreen(
                 Text(
                     "Dynamische Farben (Material You / Monet) bleiben aktiv. " +
                         "System folgt der Geräteeinstellung.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            SectionCard("Dashboard-Layout", leadingIcon = Icons.Filled.Dashboard) {
+                val layoutOptions = listOf(
+                    DashboardLayout.STANDARD to "Standard",
+                    DashboardLayout.KOMPAKT to "Kompakt",
+                    DashboardLayout.FAHRT to "Fahrt",
+                    DashboardLayout.DATEN to "Daten",
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    layoutOptions.forEachIndexed { i, (mode, label) ->
+                        SegmentedButton(
+                            selected = state.dashboardLayout == mode,
+                            onClick = { vm.setDashboardLayout(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(i, layoutOptions.size),
+                        ) { Text(label) }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    layoutHint(state.dashboardLayout),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -560,6 +586,13 @@ private fun locationStatusText(enabled: Boolean, granted: Boolean): String = whe
     !enabled -> "Aus – keine GPS-Aufzeichnung"
     !granted -> "Berechtigung fehlt – tippe auf den Button unten"
     else -> "Aktiv – läuft während Trips, wenn nicht geparkt"
+}
+
+private fun layoutHint(layout: DashboardLayout): String = when (layout) {
+    DashboardLayout.STANDARD -> "Standard: großer Tacho + Akku, alle Kacheln, scrollbar."
+    DashboardLayout.KOMPAKT -> "Kompakt zeigt alle Werte ohne Scrollen auf einem Bildschirm."
+    DashboardLayout.FAHRT -> "Fahrt: riesiger Tacho + Akku, nur die wichtigsten Werte."
+    DashboardLayout.DATEN -> "Daten: nur Zahlen, keine runden Anzeigen – Diagnose/Technik."
 }
 
 @Composable

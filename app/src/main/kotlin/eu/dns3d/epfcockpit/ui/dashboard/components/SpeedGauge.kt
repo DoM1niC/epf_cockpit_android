@@ -4,7 +4,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 @Composable
 fun SpeedGauge(
@@ -43,10 +44,19 @@ fun SpeedGauge(
 
     // Square aspect so the arc stays circular regardless of which axis the
     // caller constrains (fillMaxWidth in portrait, fillMaxHeight in landscape).
-    Box(
+    BoxWithConstraints(
         modifier = modifier.aspectRatio(1f),
         contentAlignment = Alignment.Center,
     ) {
+        // Schriftgröße sanft an den Ring-Durchmesser gekoppelt, aber gedeckelt:
+        // große Ringe (Standard/Fahrt) bleiben bei displayLarge/titleMedium,
+        // nur der kleine Kompakt-Ring wird etwas kleiner — der Floor (42sp) hält
+        // die Zahl bewusst eine Spur größer als die Akku-Prozentzahl (≈36sp).
+        val diameter = minOf(maxWidth, maxHeight)
+        val baseValue = MaterialTheme.typography.displayLarge.fontSize.value
+        val baseUnit = MaterialTheme.typography.titleMedium.fontSize.value
+        val valueSize = (diameter.value * 0.22f).coerceIn(42f, baseValue).sp
+        val unitSize = (diameter.value * 0.075f).coerceAtMost(baseUnit).sp
         Canvas(Modifier.fillMaxSize()) {
             val strokeWidth = size.minDimension * 0.10f
             val stroke = Stroke(width = strokeWidth, cap = StrokeCap.Round)
@@ -81,12 +91,12 @@ fun SpeedGauge(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = "%.1f".format(speedKmh),
-                style = MaterialTheme.typography.displayLarge,
+                style = MaterialTheme.typography.displayLarge.copy(fontSize = valueSize),
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 text = "km/h",
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleMedium.copy(fontSize = unitSize),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import eu.dns3d.epfcockpit.ble.AtResponse
 import eu.dns3d.epfcockpit.ble.BleRepository
 import eu.dns3d.epfcockpit.ble.ConnectionState
+import eu.dns3d.epfcockpit.data.DashboardLayout
 import eu.dns3d.epfcockpit.data.SettingsStore
 import eu.dns3d.epfcockpit.data.ThemeMode
 import eu.dns3d.epfcockpit.streaming.ScooterNameApi
@@ -31,6 +32,7 @@ data class SettingsUiState(
     val scooterName: String? = null,
     val scooterAddress: String? = null,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val dashboardLayout: DashboardLayout = DashboardLayout.STANDARD,
     val streamingUrl: String = "",
     val streamingEnabled: Boolean = false,
     val streamingToken: String = "",
@@ -67,6 +69,7 @@ class SettingsViewModel @Inject constructor(
             scooterName = s.lastScooterName,
             scooterAddress = s.lastScooterAddress,
             themeMode = s.themeMode,
+            dashboardLayout = s.dashboardLayout,
             streamingUrl = s.streamingUrl.orEmpty(),
             streamingEnabled = s.streamingEnabled,
             streamingToken = s.streamingToken.orEmpty(),
@@ -160,6 +163,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { store.setThemeMode(mode) }
+    }
+
+    fun setDashboardLayout(mode: DashboardLayout) {
+        viewModelScope.launch { store.setDashboardLayout(mode) }
     }
 
     fun setStreamingUrl(url: String) {

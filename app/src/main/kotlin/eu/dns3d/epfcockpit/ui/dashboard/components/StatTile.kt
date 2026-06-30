@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -32,6 +33,11 @@ fun StatTile(
     icon: ImageVector,
     modifier: Modifier = Modifier,
     accent: Color = MaterialTheme.colorScheme.primary,
+    /**
+     * Verdichtete Variante für mehrspaltige Raster (Kompakt/Daten): kleineres
+     * Padding, kleinerer Icon/Wert — damit mehr Kacheln ohne Scrollen passen.
+     */
+    dense: Boolean = false,
 ) {
     Card(
         shape = MaterialTheme.shapes.large,
@@ -40,24 +46,32 @@ fun StatTile(
         ),
         modifier = modifier,
     ) {
-        Column(Modifier.padding(16.dp).fillMaxWidth()) {
+        Column(Modifier.padding(if (dense) 10.dp else 16.dp).fillMaxWidth()) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null, tint = accent)
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = if (dense) Modifier.size(18.dp) else Modifier,
+                )
                 Spacer(Modifier.width(6.dp))
                 Text(
                     label,
-                    style = MaterialTheme.typography.labelLarge,
+                    style = if (dense) MaterialTheme.typography.labelMedium
+                    else MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(if (dense) 4.dp else 8.dp))
             ValueWithUnit(
                 value = value,
                 unit = unit,
-                valueStyle = MaterialTheme.typography.headlineLarge,
-                unitStyle = MaterialTheme.typography.bodyMedium,
+                valueStyle = if (dense) MaterialTheme.typography.headlineSmall
+                else MaterialTheme.typography.headlineLarge,
+                unitStyle = if (dense) MaterialTheme.typography.labelSmall
+                else MaterialTheme.typography.bodyMedium,
                 valueColor = MaterialTheme.colorScheme.onSurface,
                 unitColor = MaterialTheme.colorScheme.onSurfaceVariant,
             )
