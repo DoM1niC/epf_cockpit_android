@@ -69,7 +69,7 @@ class ScooterNameApi @Inject constructor() {
                         Log.w(TAG, "fetch: HTTP ${resp.code}")
                         return@withContext null
                     }
-                    val body = resp.body?.string().orEmpty()
+                    val body = resp.body.string()
                     if (body.isBlank()) return@withContext null
                     json.decodeFromString(ScooterName.serializer(), body)
                 }

@@ -149,7 +149,7 @@ class TripCoordinator @Inject constructor(
         // deterministische `local-<rowId>`-Trip-Identifier konsistent ist mit
         // den Live-`location`-Frames, die der LocationCollector schon mit
         // genau dieser ID rausgeschickt hat.
-        val finalized = trip!!.copy(id = placeholderId)
+        val finalized = trip.copy(id = placeholderId)
         runCatching { tripDao.update(finalized) }
             .onFailure {
                 Log.w(TAG, "trip update failed: ${it.message}")

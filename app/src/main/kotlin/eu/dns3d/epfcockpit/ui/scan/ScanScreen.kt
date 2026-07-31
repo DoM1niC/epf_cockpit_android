@@ -25,7 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.FilterAlt
-import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -55,7 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -121,7 +121,7 @@ fun ScanScreen(
                         Icon(Icons.Filled.Settings, contentDescription = "Einstellungen")
                     }
                     IconButton(onClick = { showAbout = true }) {
-                        Icon(Icons.Filled.HelpOutline, contentDescription = "Info")
+                        Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = "Info")
                     }
                 },
             )
@@ -361,7 +361,7 @@ private fun AboutDialog(onDismiss: () -> Unit) {
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Filled.HelpOutline, contentDescription = null) },
+        icon = { Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = null) },
         title = { Text("EPF Cockpit") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -21,7 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.DirectionsRun
+import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.filled.ElectricalServices
 import androidx.compose.material.icons.filled.LocalParking
 import androidx.compose.material.icons.filled.PowerSettingsNew
@@ -59,7 +59,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import eu.dns3d.epfcockpit.ble.Telemetry
 import eu.dns3d.epfcockpit.data.DashboardLayout
@@ -685,7 +685,7 @@ private fun RideModeRow(controls: DashControls) {
             onClick = { controls.onRideModeChange(RideMode.Kickstart) },
             enabled = !controls.locked,
             shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-            icon = { Icon(Icons.Filled.DirectionsRun, contentDescription = null) },
+            icon = { Icon(Icons.AutoMirrored.Filled.DirectionsRun, contentDescription = null) },
         ) { Text("Kick Start") }
     }
 }

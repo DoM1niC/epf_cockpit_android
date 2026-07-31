@@ -154,12 +154,8 @@ dependencies {
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
-    implementation(libs.androidx.hilt.navigation.compose)
-    // Dagger/Hilt-generierter Code referenziert @CanIgnoreReturnValue aus den
-    // errorprone-Annotations. Seit dem Toolchain-Bump (Hilt 2.60 + AGP-9-built-
-    // in-Kotlin) landet die Dependency nicht mehr automatisch im javac-Classpath
-    // der hiltJavaCompile-Task — daher explizit.
-    implementation("com.google.errorprone:error_prone_annotations:2.28.0")
+    implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
+    implementation(libs.errorprone.annotations)
 
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)

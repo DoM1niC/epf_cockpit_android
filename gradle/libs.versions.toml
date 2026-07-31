@@ -1,19 +1,19 @@
 [versions]
-agp = "9.2.1"
-kotlin = "2.4.0"
-# KSP2-Ära: entkoppeltes Schema (kein "kotlin-ksp"-Präfix mehr). 2.3.9 ist die
-# zu Kotlin 2.4.0 gepaarte Version (KSP-Quickstart).
-ksp = "2.3.9"
-hilt = "2.60"
-hiltNavigation = "1.3.0"
+agp = "9.3.1"
+kotlin = "2.4.10"
+# KSP2-Ära: entkoppeltes Schema (kein "kotlin-ksp"-Präfix mehr), die KSP-Version
+# ist nicht mehr an eine bestimmte Kotlin-Version gepaart.
+ksp = "2.3.10"
+hilt = "2.60.1"
+hiltNavigation = "1.4.0"
 coreKtx = "1.19.0"
 lifecycle = "2.11.0"
 activityCompose = "1.13.0"
-composeBom = "2026.06.00"
+composeBom = "2026.06.01"
 # Material3 bleibt explizit auf der 1.5.0-Alpha-Linie: stable 1.4.0 (vom BOM
 # gepinnt) hat die @ExperimentalMaterial3ExpressiveApi-Fläche entfernt, die diese
 # App nutzt. Stable 1.5.x existiert noch nicht.
-material3 = "1.5.0-alpha22"
+material3 = "1.5.0-alpha25"
 navigationCompose = "2.9.8"
 coroutines = "1.11.0"
 room = "2.8.4"
@@ -23,6 +23,7 @@ accompanistPermissions = "0.37.3"
 splashscreen = "1.2.0"
 okhttp = "5.4.0"
 kotlinxSerialization = "1.11.0"
+errorprone = "2.50.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -49,7 +50,14 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 # Hilt
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-android-compiler", version.ref = "hilt" }
-androidx-hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigation" }
+# Seit androidx.hilt 1.3 lebt hiltViewModel() in hilt-lifecycle-viewmodel-compose;
+# die Variante in hilt-navigation-compose ist deprecated.
+androidx-hilt-lifecycle-viewmodel-compose = { group = "androidx.hilt", name = "hilt-lifecycle-viewmodel-compose", version.ref = "hiltNavigation" }
+# Dagger/Hilt-generierter Code referenziert @CanIgnoreReturnValue aus den
+# errorprone-Annotations. Seit dem Toolchain-Bump (Hilt 2.60 + AGP-9-built-in-
+# Kotlin) landet die Dependency nicht mehr automatisch im javac-Classpath der
+# hiltJavaCompile-Task — daher explizit.
+errorprone-annotations = { group = "com.google.errorprone", name = "error_prone_annotations", version.ref = "errorprone" }
 
 # Room
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
