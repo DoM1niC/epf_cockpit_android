@@ -8,6 +8,13 @@ advertising als `HW_EF043840`). Stand: Mai 2026, App-Version 4.x.
 > für den ePF-1 (Zydtech HW9027) ist nur teilweise auf den Pulse Plus
 > anwendbar. Unsere App akzeptiert beide CRC-Endianness und decodiert mit dem
 > Pulse-Plus-Layout — sollte für den ePF-1 trotzdem laufen, ungetestet.
+> **Wichtigste Abweichung**: Die Strom-Skalierung ist beim Pulse Plus
+> **i16 / 64 A** (Hobbywing-Festkomma), nicht i16 × 0.01 A wie beim ePF-1 —
+> mit der ZydDash-Skala zeigt man ~36 % zu wenig an.
+>
+> Die Telemetrie-Feldzuordnung unten ist gegen die **dekompilierte offizielle
+> App** verifiziert (jadx, `com.zydtech.library.core.BleCore#parsingDataBuf`,
+> Monitor-Pfad für Header `0xAF`, `buf[1] == 0`).
 
 ## BLE Services & Characteristics
 
@@ -103,17 +110,18 @@ Off  Bytes                       Bedeutung
  4   <gear>                      Aktueller Gang (z.B. 02)
  5   <batt%>                     Akku-Stand 0..100
  6-7  <speed_be>                 Geschwindigkeit (u16 BE) * 0.001 km/h
- 8-9  <reserved>                 immer 00 00
+ 8-9  <speed2_be>                zweites Speed-Feld — die offizielle App zeigt
+                                 max(u16[6], u16[8]); beim Pulse Plus im Sniff
+                                 immer 00 00
 10-11 <voltage_be>               Spannung (u16 BE) * 0.1 V
-12-13 <current_be>               Strom (i16 BE signed) * 0.01 A
-                                 (negativ = Rekuperation)
-14   <temp>                      Controller-Temperatur in °C
-15   <reserved>                  meist 16
+12-13 <current_be>               Strom (i16 BE signed) / 64 A
+                                 (negativ = Rekuperation; Hobbywing-Festkomma
+                                 mit 6 Fraktionsbits — NICHT * 0.01 wie ePF-1)
+14   <esc_temp>                  Controller-Temperatur in °C (signed byte)
+15   <motor_temp>                Motor-Temperatur in °C (signed byte)
 16-17 <trip_be>                  Trip-km (u16 BE) * 0.1
 18-20 <total_be>                 Gesamt-km (u24 BE) * 0.1
-21   <reserved>                  0x04 oder 0x0C — möglicherweise Mode-Echo
-                                 (Bit 3 = 1 nach A2-Frame?), unverifiziert
-22   <status>                    Status-Byte (siehe unten)
+21-22 <status_be>                Status-Bitfeld u16 BE (siehe unten)
 23-24 <crc16_be>                 MODBUS-CRC16, big-endian
 ```
 
@@ -121,20 +129,33 @@ Daneben sendet der Scooter alternierend `AF 01 19 …` (Frame-Type 0) — das is
 ein **Command-Echo** und enthält keine Telemetry. Der `TelemetryDecoder`
 ignoriert diese Frames (`frame[3] != 0x01`).
 
-### Status-Byte [22]
+### Status-Bitfeld [21-22]
 
-Werte aus dem Sniff:
+Die offizielle App liest die Bytes 21-22 als **ein u16 BE Bitfeld**
+(intern „registerZero") und mappt laut Dekompilat:
 
-| Byte | Bit 7 | Bit 5 | Bit 1 | Bedeutung              |
-|------|-------|-------|-------|------------------------|
-| `02` | 0     | 0     | 1     | Aktiv, kein Park       |
-| `22` | 0     | 1     | 1     | Park ON                |
+| u16-Bit | Byte/Bit  | Zydtech-Name       | Bemerkung                          |
+|---------|-----------|--------------------|-------------------------------------|
+| 2       | [22]·2    | `headLightSw`      |                                     |
+| 5       | [22]·5    | `bootMode`         | = unser „Park-Echo", siehe unten    |
+| 6       | [22]·6    | `metricInchSw`     |                                     |
+| 9       | [21]·1    | `cruiseControlSw`  |                                     |
+| 11      | [21]·3    | `lockSw`           | das beobachtete `04`↔`0C`-Flackern  |
+| 15      | [21]·7    | `atmosphereLightSw`|                                     |
 
-**Bit 5 = Park-Lock** (verifiziert am Roller: physisch im Park → `0x22`).
-Bit 7 wurde im Sniff nie als 1 gesehen, obwohl wir `A2`-Frames mit Bit 7 = 1
-geschickt haben. Daher kann der **Ride-Mode (Stand vs Kickstart) nicht aus
-der Telemetrie gelesen werden** und wird in der App persistent in DataStore
-gespeichert.
+Werte aus dem Sniff (Byte 22):
+
+| Byte | Bit 5 | Bit 1 | Bedeutung              |
+|------|-------|-------|------------------------|
+| `02` | 0     | 1     | Aktiv, kein Park       |
+| `22` | 1     | 1     | Park ON                |
+
+**Bit 5 = Park-Lock aus Sicht unserer App** (verifiziert am Roller: physisch
+im Park → `0x22`). Zydtech nennt dasselbe Bit `bootMode` — konsistent damit,
+dass „Kick Start"-Frames (`0x82`) es ebenfalls umschalten, obwohl der
+physische Park-Lock unverändert bleibt. Ein separater verlässlicher
+Ride-Mode-Indikator existiert damit weiterhin nicht; der Mode wird in der
+App persistent in DataStore gespeichert.
 
 **Wichtig zur UI-Politik**: Mode-Frames (`A2`, `82`) ändern das Telemetry-Bit-5
 (Park-Echo), obwohl der physische Park-Lock am Roller davon nicht beeinflusst

@@ -1,19 +1,24 @@
 package eu.dns3d.epfcockpit.ble
 
 /**
- * Decoded snapshot of a telemetry frame (type 2) emitted on the low-level RX char.
+ * Decoded snapshot of a telemetry frame (type 1) emitted on the low-level RX char.
  *
- * Byte mapping per ZydDash (ePF-1):
+ * Byte mapping verified against the decompiled official app
+ * (com.zydtech.epowerfun, BleCore.parsingDataBuf) on a Pulse Plus:
  *  [4]      gear (1..3)
  *  [5]      battery %
- *  [6..7]   speed   u16 * 0.001 km/h
+ *  [6..7]   speed   u16 * 0.001 km/h ([8..9] carries a redundant copy;
+ *           the official app displays max of both)
  *  [10..11] voltage u16 * 0.1   V
- *  [12..13] current i16 * 0.01  A (signed — regen produces negative)
- *  [14]     controller temperature °C
+ *  [12..13] current i16 / 64    A (signed — regen produces negative;
+ *           Hobbywing fixed-point. NOT the 0.01 A/LSB that ZydDash
+ *           documents for the ePF-1 — that scale reads ~36 % too low here)
+ *  [14]     controller/ESC temperature °C (signed)
+ *  [15]     motor temperature °C (signed)
  *  [16..17] trip km   u16 * 0.1
  *  [18..20] total km  u24 * 0.1
  *
- * Watts are derived client-side as |U * I|.
+ * Watts are derived client-side as |U * I| (the official app does the same).
  */
 data class Telemetry(
     val gear: Int,
@@ -22,6 +27,7 @@ data class Telemetry(
     val voltage: Float,
     val currentAmps: Float,
     val controllerTempC: Int,
+    val motorTempC: Int,
     val tripKm: Float,
     val totalKm: Float,
     /**
@@ -72,6 +78,7 @@ object TelemetryDecoder {
         }
 
         fun u8(i: Int)  = frame[i].toInt() and 0xFF
+        fun s8(i: Int)  = frame[i].toInt()
         fun u16(i: Int) = (u8(i) shl 8) or u8(i + 1)
         fun s16(i: Int): Int {
             val v = u16(i)
@@ -82,10 +89,11 @@ object TelemetryDecoder {
         return Telemetry(
             gear = u8(4),
             batteryPercent = u8(5).coerceIn(0, 100),
-            speedKmh = u16(6) * 0.001f,
+            speedKmh = maxOf(u16(6), u16(8)) * 0.001f,
             voltage = u16(10) * 0.1f,
-            currentAmps = s16(12) * 0.01f,
-            controllerTempC = u8(14),
+            currentAmps = s16(12) / 64f,
+            controllerTempC = s8(14),
+            motorTempC = s8(15),
             tripKm = u16(16) * 0.1f,
             totalKm = u24(18) * 0.1f,
             // 25-byte telemetry frames include a status byte at [22] before

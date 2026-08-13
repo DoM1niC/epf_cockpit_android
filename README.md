@@ -12,7 +12,7 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
 - Großer Tacho-Ring mit animiertem Sweep-Gradient
 - Akku-Ring mit Farbwechsel (rot → orange → grün)
 - Live-Leistung (Watt = U·I), Rekuperations-Anzeige
-- Spannung, Strom, Controller-Temperatur, Trip- und Gesamt-Kilometer
+- Spannung, Strom, Controller- und Motor-Temperatur, Trip- und Gesamt-Kilometer
 - Bildschirm bleibt im Cockpit an (kein versehentliches Dimmen während der Fahrt)
 - **Layout-Switcher** (Settings): vier Dashboard-Layouts — **Standard** (großer
   Tacho + Akku, scrollbar), **Kompakt** (alle Werte ohne Scrollen auf einem

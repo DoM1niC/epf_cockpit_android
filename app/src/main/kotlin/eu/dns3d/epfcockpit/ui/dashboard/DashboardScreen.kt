@@ -160,13 +160,15 @@ private data class StatSpec(
     val accent: Boolean = false,
 )
 
-/** Die sechs Standard-Kacheln — identisch zur bisherigen StatGrid-Anordnung. */
+/** Die Standard-Kacheln — Reihenfolge so, dass Strom/Temperaturen gruppiert
+ *  liegen und die Leistung als Abschlusszeile steht. */
 private fun coreStats(t: Telemetry?): List<StatSpec> = listOf(
     StatSpec("Trip", "%.1f".format(t?.tripKm ?: 0f), "km", Icons.Filled.Route),
     StatSpec("Gesamt", "%.1f".format(t?.totalKm ?: 0f), "km", Icons.Filled.Speed),
     StatSpec("Spannung", "%.1f".format(t?.voltage ?: 0f), "V", Icons.Filled.Bolt),
     StatSpec("Strom", "%.1f".format(t?.currentAmps ?: 0f), "A", Icons.Filled.ElectricalServices),
     StatSpec("Controller", "${t?.controllerTempC ?: 0}", "°C", Icons.Filled.Thermostat),
+    StatSpec("Motor", "${t?.motorTempC ?: 0}", "°C", Icons.Filled.Thermostat),
     StatSpec(
         "Leistung",
         "%.0f".format(t?.absWatts ?: 0f),

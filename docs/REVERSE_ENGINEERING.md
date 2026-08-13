@@ -89,10 +89,38 @@ Datei `parse_btsnoop.py` (außerhalb des Repos gehalten, weil unschön & Quick-H
 |---------------------------------------------|----------------------------|
 | `AF 00 0A 02 00 06 0F 14 96 A7`             | Read-Poll, vom ePF-1 doku  |
 | `01 03 00 …` (FC3)                          | Settings-Read-Block        |
-| Status-Byte [22] Bit 3 (0x08)               | wechselt 04↔0C, evtl. Mode-Echo |
-| Telemetry [21] `04` vs `0C`                 | korreliert mit Bit 3 von [22] |
+
+~~Telemetry [21] `04` vs `0C`~~ — aufgeklärt: Bytes 21-22 sind ein
+u16-Bitfeld, das Flackern ist `lockSw` (Bit 11). Siehe
+[PROTOCOL.md](PROTOCOL.md#status-bitfeld-21-22).
 
 Wer hier mehr findet — Pull-Request willkommen.
+
+## Dekompilierung der offiziellen App
+
+Wenn Sniffen nicht reicht (z.B. um **Skalierungsfaktoren** zu klären, die
+man aus Rohframes allein nicht ablesen kann), hilft der Blick in die
+offizielle App selbst:
+
+```bash
+adb shell pm path com.zydtech.epowerfun          # base.apk-Pfad holen
+adb pull <pfad>/base.apk epf_official.apk
+jadx -d out --no-res epf_official.apk
+```
+
+Der Telemetrie-Parser sitzt in
+`com.zydtech.library.core.BleCore#parsingDataBuf` (Monitor-Pfad: Header
+`0xAF`/`0xAB`, `buf[1] == 0`). Genau diese Methode zerlegt jadx standardmäßig
+nur unvollständig — dann gezielt nachfassen mit:
+
+```bash
+jadx -d out2 --no-res --show-bad-code \
+     --single-class "com.zydtech.library.core.BleCore" epf_official.apk
+```
+
+So wurde die Strom-Skalierung `/ 64` gefunden (unsere App hatte bis dahin
+die ZydDash-Skala `* 0.01` — Anzeige ~36 % zu niedrig), außerdem Byte 15 =
+Motor-Temperatur und das Status-Bitfeld [21-22].
 
 ## Empfohlene Sniff-Diskipline
 
