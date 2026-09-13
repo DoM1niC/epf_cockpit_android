@@ -43,8 +43,13 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
 - **Zweiphasiger Auto-Reconnect**: erst direkter Connect auf gespeicherte MAC
   (≤6 s), dann Scan-by-Name (≤15 s, robust gegen Privacy-MAC-Rotation),
   danach manueller Scan-View
-- Nach manuellem „Trennen" kein Auto-Reconnect mehr in der gleichen
-  App-Session (kollidiert sonst mit dem gerade freigewordenen BLE-Radio)
+- **Reconnect im Hintergrund**: reißt die Verbindung bei gesperrtem Handy ab
+  (z.B. geparkt, außer Reichweite), wartet die App bis zu 2 h auf den Roller
+  und verbindet selbst neu — ohne App-Öffnen. Bei entsperrtem Handy mit
+  anderer App vorne bleibt der Funk frei, damit z.B. die Hersteller-App den
+  Roller findet (abschaltbar: „Bei gesperrtem Handy neu verbinden“)
+- Nach manuellem „Trennen" (Dashboard oder Notification) kein Auto-Reconnect
+  mehr in der gleichen App-Session
 - Friendly Error-Wording für GATT-Status-Codes
 - Connection bleibt stabil dank des sniff-verifizierten `A5 02 FD 5A`
   Heartbeat alle 600 ms
@@ -142,12 +147,13 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
 ### Quick-Tile + Home-Screen-Widget
 - **Quick-Tile** in den Schnelleinstellungen: 1-Klick Entsperren/Sperren.
   Status (Verbunden? Geparkt?) wird live vom FGS gepusht, Untertext zeigt
-  "Entsperren" / "Sperren" / "nicht verbunden".
+  "Entsperren" / "Sperren" / "Verbinden".
 - **Home-Widget** (3×1) mit zwei Buttons: **Entsperren ↔ Sperren** (Label
   flippt nach Park-Zustand) und **Modus: Stand / Kick** (toggle). Updates
   bei jedem Telemetrie-Frame, also fast live.
-- Tile- oder Widget-Klick startet den FGS und wartet bis zu 10 s auf
-  BLE-Auth wenn die App grad nicht verbunden ist — funktioniert also auch
+- Tile- oder Widget-Klick im getrennten Zustand verbindet nur (ohne Park-
+  Befehl — der Park-Zustand ist dann unbekannt). Befehle bei laufendem
+  Verbindungsaufbau warten bis zu 20 s auf BLE-Auth — funktioniert also auch
   wenn du nur die Tile/Widget vom Lockscreen tippst.
 
 ### NFC-Diagnose + Magic-NTAG215-Klon
@@ -262,6 +268,7 @@ Release-Build mit dem Debug-Key signiert.
 | `ACCESS_FINE_LOCATION` / `ACCESS_COARSE_LOCATION` | Optionales GPS-Tracking pro Trip (opt-in im Settings, AOSP-LocationManager) |
 | `NFC`                                       | NFC-Diagnose-Tag-Read + Magic-NTAG215-Klon (install-time, kein Runtime-Prompt) |
 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`      | Onboarding-Prompt: Akku-Optimierung aus, damit Doze den FGS nicht killt |
+| `WAKE_LOCK`                                 | Kurze Partial-WakeLocks für Reconnect-Versuche im Hintergrund, Re-Auth nach Reconnect und (adaptiv) den Heartbeat bei Display aus |
 
 ## Was bewusst nicht geht
 

@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import eu.dns3d.epfcockpit.ble.BleRepository
 import eu.dns3d.epfcockpit.ble.ConnectionState
 import eu.dns3d.epfcockpit.ble.DiscoveredScooter
+import eu.dns3d.epfcockpit.ble.ReconnectStatus
 import eu.dns3d.epfcockpit.data.SettingsStore
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -92,6 +93,9 @@ class ScanViewModel @Inject constructor(
         // talking to a scooter — refreshEnvironment is wired to ON_RESUME and
         // will otherwise race with the in-flight scan.
         if (connection.value !is ConnectionState.Disconnected) return
+        // Eine Reconnect-Episode im Repository läuft schon — kein zweiter Connect
+        // parallel (deren Timeouts setzen kurz Disconnected).
+        if (ble.reconnectStatus.value !is ReconnectStatus.Idle) return
         if (_state.value.autoReconnecting || _state.value.scanning) return
 
         if (rememberedAutoConnect) {

@@ -28,8 +28,11 @@ class UnlockTileService : TileService() {
 
     override fun onClick() {
         super.onClick()
+        val ready = WidgetStateHolder.connected && WidgetStateHolder.authenticated
         val intent = Intent(this, EpfConnectionService::class.java).apply {
-            action = EpfConnectionService.ACTION_TOGGLE_PARK
+            // Nicht verbunden → nur verbinden. Blind togglen würde bei unbekanntem
+            // Park-Zustand den Roller nach dem Connect parken.
+            action = if (ready) EpfConnectionService.ACTION_TOGGLE_PARK else EpfConnectionService.ACTION_CONNECT
         }
         ContextCompat.startForegroundService(this, intent)
         // Optimistisch das Label flippen — der FGS pusht nach erfolgreichem
@@ -52,9 +55,12 @@ class UnlockTileService : TileService() {
         val tile = qsTile ?: return
         when {
             !connected || !auth -> {
-                tile.state = Tile.STATE_UNAVAILABLE
+                // NICHT STATE_UNAVAILABLE: SystemUI verwirft Klicks auf solche
+                // Tiles (CustomTile.handleClick) — genau im getrennten Zustand
+                // soll der Tap aber verbinden.
+                tile.state = Tile.STATE_INACTIVE
                 tile.label = "E-Scooter"
-                tile.subtitle = "nicht verbunden"
+                tile.subtitle = "Verbinden"
             }
             parking == true -> {
                 tile.state = Tile.STATE_INACTIVE

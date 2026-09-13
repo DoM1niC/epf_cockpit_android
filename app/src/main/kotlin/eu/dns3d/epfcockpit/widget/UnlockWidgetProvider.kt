@@ -73,9 +73,16 @@ class UnlockWidgetProvider : AppWidgetProvider() {
             val modeLabel = "Modus: " + if (rideModeStand) "Stand" else "Kick"
             views.setTextViewText(R.id.btn_unlock, parkLabel)
             views.setTextViewText(R.id.btn_mode, modeLabel)
+            // Getrennt → nur verbinden. ACTION_TOGGLE_PARK würde bei unbekanntem
+            // Park-Zustand nach dem Connect parken statt zu entsperren.
+            val parkAction = if (state == State.DISCONNECTED) {
+                EpfConnectionService.ACTION_CONNECT
+            } else {
+                EpfConnectionService.ACTION_TOGGLE_PARK
+            }
             views.setOnClickPendingIntent(
                 R.id.btn_unlock,
-                buildPendingIntent(context, EpfConnectionService.ACTION_TOGGLE_PARK),
+                buildPendingIntent(context, parkAction),
             )
             views.setOnClickPendingIntent(
                 R.id.btn_mode,

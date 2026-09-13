@@ -29,6 +29,8 @@ data class SettingsUiState(
     val gear2: Int = 15,
     val gear3: Int = 20,
     val autoConnect: Boolean = true,
+    /** Nach Abbruch auch bei gesperrtem Handy selbst neu verbinden. */
+    val reconnectWhileLocked: Boolean = true,
     val scooterName: String? = null,
     val scooterAddress: String? = null,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -66,6 +68,7 @@ class SettingsViewModel @Inject constructor(
             gear2 = s.gear2MaxKmh,
             gear3 = s.gear3MaxKmh,
             autoConnect = s.autoConnect,
+            reconnectWhileLocked = s.reconnectWhileLocked,
             scooterName = s.lastScooterName,
             scooterAddress = s.lastScooterAddress,
             themeMode = s.themeMode,
@@ -159,6 +162,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setAutoConnect(enabled: Boolean) {
         viewModelScope.launch { store.setAutoConnect(enabled) }
+    }
+
+    fun setReconnectWhileLocked(enabled: Boolean) {
+        viewModelScope.launch { store.setReconnectWhileLocked(enabled) }
     }
 
     fun setThemeMode(mode: ThemeMode) {

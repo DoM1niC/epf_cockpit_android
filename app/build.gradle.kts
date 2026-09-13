@@ -172,4 +172,6 @@ dependencies {
     // Telemetry-Streaming an Node-Dashboard (WebSocket-Client + JSON)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
+
+    testImplementation(libs.junit)
 }

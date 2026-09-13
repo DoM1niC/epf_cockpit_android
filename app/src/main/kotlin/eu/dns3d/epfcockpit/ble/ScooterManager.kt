@@ -58,6 +58,13 @@ class ScooterManager(context: Context) : BleManager(context) {
     )
     val connEvents: SharedFlow<ConnEvent> = _connEvents.asSharedFlow()
 
+    /**
+     * true sobald WIR [requestDisconnect] aufgerufen haben, bis zum nächsten
+     * [connectTo]. Einzige verlässliche Quelle für "vom User getrennt" — der
+     * Nordic-Reason taugt dafür nicht (siehe onDeviceDisconnected).
+     */
+    @Volatile private var disconnectRequested = false
+
     init {
         setConnectionObserver(object : ConnectionObserver {
             override fun onDeviceConnecting(device: android.bluetooth.BluetoothDevice) {}
@@ -69,11 +76,14 @@ class ScooterManager(context: Context) : BleManager(context) {
             override fun onDeviceReady(device: android.bluetooth.BluetoothDevice) {}
             override fun onDeviceDisconnecting(device: android.bluetooth.BluetoothDevice) {}
             override fun onDeviceDisconnected(device: android.bluetooth.BluetoothDevice, reason: Int) {
-                // REASON_SUCCESS = lokal initiierter sauberer Disconnect (requestDisconnect),
-                // REASON_TERMINATE_LOCAL_HOST = ebenfalls lokal. Alles andere ist peer-side
-                // oder ein Verbindungsabbruch — da wollen wir Auto-Reconnect anstoßen.
-                val userInitiated = reason == ConnectionObserver.REASON_SUCCESS ||
-                    reason == ConnectionObserver.REASON_TERMINATE_LOCAL_HOST
+                // Mit useAutoConnect(false) setzt Nordic intern userDisconnected=true
+                // (BleManagerHandler.internalConnect). Der Observer bekommt deshalb
+                // mapDisconnectStatusToReason: HCI 19→2, 0/8→10, 22→1, sonst −1 —
+                // nie LINK_LOSS(3). REASON_TERMINATE_LOCAL_HOST(1) kommt auch bei
+                // stack-internen Abbrüchen und BT-aus, ist also KEIN Beleg für eine
+                // User-Trennung. Den rohen HCI-Status zeigt Nordics Log-Zeile
+                // "Connection state changed with status:".
+                val userInitiated = disconnectRequested || reason == ConnectionObserver.REASON_SUCCESS
                 Log.i(tag, "onDeviceDisconnected reason=$reason userInitiated=$userInitiated")
                 _connEvents.tryEmit(ConnEvent.Disconnected(reason, userInitiated))
             }
@@ -116,6 +126,7 @@ class ScooterManager(context: Context) : BleManager(context) {
     }
 
     suspend fun connectTo(device: BluetoothDevice) {
+        disconnectRequested = false
         connect(device)
             .retry(2, 200)
             // useAutoConnect(true) silently waits in passive-scan mode for
@@ -190,6 +201,7 @@ class ScooterManager(context: Context) : BleManager(context) {
      * good only when the Application process dies.
      */
     fun requestDisconnect() {
+        disconnectRequested = true
         disconnect().enqueue()
     }
 }

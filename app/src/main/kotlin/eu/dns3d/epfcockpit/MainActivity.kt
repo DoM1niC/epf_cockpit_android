@@ -15,7 +15,6 @@ import eu.dns3d.epfcockpit.data.SettingsStore
 import eu.dns3d.epfcockpit.data.ThemeMode
 import eu.dns3d.epfcockpit.data.TripCoordinator
 import eu.dns3d.epfcockpit.data.TripSyncer
-import eu.dns3d.epfcockpit.service.ForegroundController
 import eu.dns3d.epfcockpit.streaming.TelemetryStreamer
 import eu.dns3d.epfcockpit.ui.nav.AppNav
 import eu.dns3d.epfcockpit.ui.onboarding.StartupPermissionsDialog
@@ -29,10 +28,10 @@ class MainActivity : ComponentActivity() {
 
     // Just inject these @Singletons so Hilt instantiates them at app start
     // — ihre init-Blöcke laufen dann und hängen sich an die BleRepository-
-    // Flows. Sonst würden Streaming / FGS / Trip-Recording erst beim ersten
-    // expliziten Aufruf scharf geschaltet.
+    // Flows. Sonst würden Streaming / Trip-Recording erst beim ersten
+    // expliziten Aufruf scharf geschaltet. (Der ForegroundController lebt
+    // Application-scoped in EpfApplication.)
     @Suppress("unused") @Inject lateinit var streamer: TelemetryStreamer
-    @Suppress("unused") @Inject lateinit var foregroundController: ForegroundController
     @Suppress("unused") @Inject lateinit var tripCoordinator: TripCoordinator
     @Suppress("unused") @Inject lateinit var tripSyncer: TripSyncer
 

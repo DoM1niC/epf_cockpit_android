@@ -183,15 +183,39 @@ normalen Tab gegentesten.
 - `IMPORTANCE_LOW`-Channel ist standardmäßig kollabiert auf manchen
   ROMs (OxygenOS, MIUI) — Pull-down ausklappen, Notification ist da.
 
-### App-Verbindung stirbt nach 5-10 Minuten Standby
+### App-Verbindung stirbt nach 5-10 Minuten Standby (geparkt, Handy gesperrt)
 
-Akku-Optimierung ist noch aktiv. Doze friert auch Foreground-Services
-ein bei aggressiven Vendor-ROMs (Xiaomi, Huawei, OnePlus). Fix:
-- Startup-Dialog erneut triggern: App-Daten löschen oder
-  `adb shell pm clear eu.dns3d.epfcockpit.debug`
-- Manuell: System-Settings → Apps → EPF Cockpit → Akku → "Uneingeschränkt"
-- Auf besonders aggressiven ROMs zusätzlich: "Im Hintergrund starten
-  erlauben" / "Auto-Start aktivieren"
+Früher musste man danach die App öffnen, damit sie wieder verbindet. Ursache
+war nicht Doze (auch mit Akku-Whitelist trat es auf), sondern die App selbst:
+der Reconnect war im Hintergrund pauschal pausiert und der Foreground-Service
+wurde beim Abriss gestoppt → Android fror den Prozess ein.
+
+Heute startet nach einem Abriss eine **Reconnect-Episode** (siehe unten
+„Andere App findet den Roller nicht mehr“): bei gesperrtem Handy wartet ein
+Bluetooth-Sentinel bis zu 2 h auf den Roller und verbindet selbst neu, der
+Foreground-Service bleibt dabei an („Verbindet automatisch, sobald der Roller
+erreichbar ist“).
+
+Warum der Link überhaupt abreißt, zeigt der Disconnect-Reason:
+`adb logcat -s ScooterManager:V BleRepository:V` → `onDeviceDisconnected reason=N`
+
+| reason | HCI-Status | Bedeutung |
+|---|---|---|
+| 2 | 0x13 | Roller hat getrennt (z.B. ~30 s ohne Heartbeat) |
+| 10 | 0x08 / 0x00 | Supervision-Timeout — Reichweite, Funk |
+| 1 | 0x16 | lokaler Host (Android-Stack) hat getrennt |
+| −1 | sonst | z.B. 0x15 Roller ausgeschaltet |
+
+(Mit `useAutoConnect(false)` reicht Nordic den gemappten Status durch,
+`REASON_LINK_LOSS` (3) kommt nie. Den rohen Code zeigt Nordics Logzeile
+`Connection state changed with status:`.)
+
+Heartbeat im CPU-Suspend: `delay(600)` steht still, solange das SoC schläft.
+Misst der Heartbeat eine Lücke > 2 s, loggt er `heartbeat starvation: … ms`
+und hält ab dann bei Display aus eine Partial-WakeLock (`EpfCockpit:heartbeat`).
+
+Auf aggressiven Vendor-ROMs zusätzlich Akku → „Uneingeschränkt“ bzw.
+„Im Hintergrund starten erlauben“ setzen.
 
 ### Trip-Recording stoppt zu früh
 
@@ -228,22 +252,38 @@ Zwei Quellen halten den Link:
    Hintergrund mit laufendem Foreground-Service).
 2. Der **Auto-Reconnect**, der den Roller nach einem Abriss wieder greift.
 
-Was die App dagegen tut (`BleRepository`):
-- **Reconnect pausiert im Hintergrund.** Sobald die App nicht im Vordergrund
-  ist (`ProcessLifecycle` via `ForegroundController` → `onAppForegroundChanged`),
-  startet kein neuer Reconnect-Versuch und ein laufender wird abgebrochen. Eine
-  bereits stehende Verbindung bleibt erhalten (Ride-Telemetrie bei Screen-off).
-- **Reconnect ist gekappt** (`MAX_RECONNECT_ATTEMPTS = 5`, ~3 min mit Backoff).
-  Danach gibt die App auf und gibt den Funk frei statt ewig zu greifen.
+Was die App dagegen tut (`BleRepository` + `ReconnectPolicy`): Nach einem
+unerwarteten Abriss läuft eine **Reconnect-Episode** (max. 2 h), die bei jedem
+Durchlauf neu entscheidet:
+
+| Situation | Modus | Verhalten |
+|---|---|---|
+| App im Vordergrund / Widget-, Tile-, Notification-Tap | `ACTIVE` | 2-Phasen-Loop, Backoff 10/20/30/60 s, Cap 5 Versuche — danach funkstill („Auto-Suche pausiert“), bis das Handy gesperrt, die App neu geöffnet oder „Verbinden“ getippt wird |
+| Handy gesperrt / Display aus, oder gerade gefahren | `WAIT` | Sentinel (`connectGatt(autoConnect=true)`) wartet im BT-Controller auf den Roller |
+| entsperrt + andere App vorne | `PAUSE` | Funk bleibt frei (Handover), bis gesperrt oder App geöffnet |
+| Schalter „Bei gesperrtem Handy neu verbinden“ aus, nie authentifiziert, Flattern | `DEFER` | Episode endet, Reconnect erst beim App-Start (altes Verhalten) |
+| Bluetooth aus (Schalter, Flugmodus, Stack-Neustart) | `BLUETOOTH_OFF` | funkstill bis zu 10 min auf Bluetooth warten, danach wie `DEFER` |
+
+- Hat der Roller schon einen fremden GATT-Link (Hersteller-App), armiert die
+  App den Sentinel nicht. Meldet der Sentinel einen Link, löst die App ihn
+  zuerst und prüft nach 3 s, ob eine andere App den Link hält — dann wird er
+  nicht übernommen.
+- Laufende Versuche brechen sofort ab, wenn die Policy sie nicht mehr erlaubt
+  (z.B. Wechsel in die Hersteller-App mitten im Connect).
+- Eine stehende Verbindung bleibt im Hintergrund erhalten (Ride-Telemetrie).
+- Endet eine Episode im Hintergrund erfolglos, erscheint ein wegwischbarer
+  Hinweis mit „Verbinden“ (auch vom Sperrbildschirm).
 
 Saubere Übergabe an eine andere App:
-- Im Dashboard auf das **Bluetooth-Symbol (Trennen)** tippen — `disconnect()`
-  setzt `userDisconnected`, stoppt Heartbeat + Foreground-Service und gibt den
-  GATT-Link frei. Danach advertised der Roller sofort wieder.
+- In der **Notification auf „Trennen“** tippen, oder im Dashboard auf das
+  **Bluetooth-Symbol** — `disconnect()` setzt `userDisconnected`, beendet eine
+  Episode, stoppt Heartbeat + Foreground-Service und gibt den GATT-Link frei.
+  Danach advertised der Roller sofort wieder.
 - Oder die App aus den Recents **wegswipen** (`onTaskRemoved` → `exitProcess`).
-- Optional **Auto-Verbinden** in den Einstellungen ausschalten, wenn man oft
-  zwischen den Apps wechselt.
+- Soll die Hersteller-App grundsätzlich Vorrang haben: in den Einstellungen
+  **„Bei gesperrtem Handy neu verbinden“** ausschalten (oder Auto-Verbinden).
 
-Logcat-Filter: `adb logcat -s BleRepository:V ForegroundController:V`
-(Marker: `App im Hintergrund — Reconnect pausiert` /
-`auto-reconnect: Cap … erreicht — pausiert, Funk freigegeben`).
+Logcat-Filter: `adb logcat -s BleRepository:V ScooterPresence:V DeviceInteractivity:V ForegroundController:V`
+(Marker: `link lost (reason=…)`, `reconnect mode → WAIT|PAUSE|ACTIVE|DEFER`,
+`presence armed`, `presence status=0 state=2`, `Roller wieder erreichbar`,
+`phase 2 übersprungen`, `auto-reconnect: Cap … erreicht`).

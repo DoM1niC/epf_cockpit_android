@@ -139,7 +139,7 @@ fun SettingsScreen(
                     Column(Modifier.weight(1f)) {
                         Text("Automatisch verbinden", style = MaterialTheme.typography.titleMedium)
                         Text(
-                            "Beim Start direkt zum letzten Scooter",
+                            "Beim Start und nach einem Verbindungsabbruch zum letzten Scooter",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -147,13 +147,32 @@ fun SettingsScreen(
                     Switch(checked = state.autoConnect, onCheckedChange = vm::setAutoConnect)
                 }
                 Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Bei gesperrtem Handy neu verbinden", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Reißt die Verbindung ab, während das Display aus oder das Handy " +
+                                "gesperrt ist, wartet die App bis zu 2 Stunden auf den Roller " +
+                                "und verbindet sich selbst neu.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = state.reconnectWhileLocked,
+                        enabled = state.autoConnect,
+                        onCheckedChange = vm::setReconnectWhileLocked,
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
                 Text(
                     "Hinweis: Solange diese App verbunden ist, kann sich keine andere " +
                         "App (z.B. die Hersteller-App) mit dem Roller verbinden — er " +
-                        "advertised dann nicht mehr. Tippe im Dashboard auf das " +
-                        "Bluetooth-Symbol (Trennen), bevor du eine andere App nutzt. " +
-                        "Der Auto-Reconnect pausiert automatisch, sobald diese App im " +
-                        "Hintergrund ist.",
+                        "advertised dann nicht mehr. Tippe auf „Trennen“ (Dashboard oder " +
+                        "Notification), bevor du eine andere App nutzt. Bist du entsperrt " +
+                        "in einer anderen App, pausiert der Auto-Reconnect. Bei gesperrtem " +
+                        "Handy verbindet die App selbst neu – schalte das oben aus, wenn " +
+                        "die Hersteller-App Vorrang haben soll.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

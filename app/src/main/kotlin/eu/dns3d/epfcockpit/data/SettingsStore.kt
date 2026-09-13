@@ -39,6 +39,9 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val lastScooterName: String?,
         val savedPin: String?,
         val autoConnect: Boolean,
+        /** Nach einem Verbindungsabbruch auch bei gesperrtem Handy / Display aus
+         *  selbst neu verbinden (Default an). Aus = Reconnect erst beim App-Start. */
+        val reconnectWhileLocked: Boolean,
         val gear1MaxKmh: Int,
         val gear2MaxKmh: Int,
         val gear3MaxKmh: Int,
@@ -75,6 +78,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             lastScooterName = p[KEY_NAME],
             savedPin = p[KEY_PIN],
             autoConnect = p[KEY_AUTO_CONNECT] ?: true,
+            reconnectWhileLocked = p[KEY_RECONNECT_WHILE_LOCKED] ?: true,
             gear1MaxKmh = p[KEY_G1] ?: 6,
             gear2MaxKmh = p[KEY_G2] ?: 15,
             gear3MaxKmh = p[KEY_G3] ?: 20,
@@ -114,6 +118,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
 
     suspend fun setAutoConnect(enabled: Boolean) {
         context.dataStore.edit { p -> p[KEY_AUTO_CONNECT] = enabled }
+    }
+
+    suspend fun setReconnectWhileLocked(enabled: Boolean) {
+        context.dataStore.edit { p -> p[KEY_RECONNECT_WHILE_LOCKED] = enabled }
     }
 
     suspend fun setGearLimits(g1: Int, g2: Int, g3: Int) {
@@ -184,6 +192,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val KEY_NAME = stringPreferencesKey("scooter_name")
         val KEY_PIN = stringPreferencesKey("scooter_pin")
         val KEY_AUTO_CONNECT = booleanPreferencesKey("auto_connect")
+        val KEY_RECONNECT_WHILE_LOCKED = booleanPreferencesKey("reconnect_while_locked")
         val KEY_G1 = intPreferencesKey("gear1_max_kmh")
         val KEY_G2 = intPreferencesKey("gear2_max_kmh")
         val KEY_G3 = intPreferencesKey("gear3_max_kmh")

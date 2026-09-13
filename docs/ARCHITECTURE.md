@@ -119,6 +119,16 @@ Zweiphasiges Reconnect-Pattern:
 Process-Session — nach manuellem „Trennen" wird Auto-Reconnect übersprungen
 bis zum nächsten App-Restart.
 
+Nach einem Abriss einer **stehenden** Verbindung übernimmt nicht der
+ScanViewModel, sondern eine Reconnect-Episode in `BleRepository`
+(`startEpisode`/`runEpisode`). `ReconnectPolicy.decide` wählt pro Durchlauf
+`ACTIVE` (derselbe 2-Phasen-Loop, Cap 5), `WAIT` (Handy gesperrt:
+`ScooterPresenceWatcher` = `connectGatt(autoConnect=true)`-Sentinel),
+`PAUSE` (entsperrt + andere App vorne → Single-Link-Handover) oder `DEFER`
+(bis zum App-Start). `DeviceInteractivity` (SCREEN_ON/OFF/USER_PRESENT)
+liefert „gesperrt vs. entsperrt“, weil ProcessLifecycle beides als ON_STOP
+meldet. Details + Logmarker: docs/TROUBLESHOOTING.md.
+
 ## BLE-Manager-Eigenheiten (warum wir die Library so verwenden)
 
 - **`useAutoConnect(false)`** statt `true`: active connect ist viel schneller
@@ -203,10 +213,11 @@ Damit die App auch verbunden bleibt wenn der Screen aus geht oder der
 User wegnavigiert, hängt eine Lifecycle-Kette an `BleRepository.connection`:
 
 ```
-BleRepository.connection
+BleRepository.connection / reconnectStatus
         │
-        ├─► ForegroundController (@Singleton)
-        │       │ (Connecting/Connected → startService; sonst stopService)
+        ├─► ForegroundController (@Singleton, in EpfApplication injiziert)
+        │       │ (keepServiceAlive = Connecting/Connected ODER Episode läuft
+        │       │  → startService; sonst nach 2 s Gnadenfrist stopService)
         │       ▼
         │   EpfConnectionService (Foreground)
         │       │ (combine telemetry+connection, update Notification)
@@ -223,9 +234,20 @@ BleRepository.connection
         └─► TelemetryStreamer (@Singleton) → Web-Dashboard
 ```
 
-Alle drei `@Singleton`s werden in `MainActivity` per `@Inject` referenziert
-damit Hilt sie beim ersten Activity-Create instanziiert — ohne diese
-Referenz blieben sie tot, weil Hilt Singletons erst on-demand baut.
+`TripCoordinator` und `TelemetryStreamer` werden in `MainActivity` per
+`@Inject` referenziert, damit Hilt sie beim ersten Activity-Create
+instanziiert — ohne diese Referenz blieben sie tot, weil Hilt Singletons erst
+on-demand baut. Der `ForegroundController` hängt dagegen in `EpfApplication`,
+damit FGS-Lebenszyklus und Vorder-/Hintergrund-Erkennung auch bei einem
+Kaltstart über Widget, Quick-Tile oder Notification-Action gelten.
+
+Der FGS bleibt über einen Verbindungsabbruch hinweg an, solange eine
+Reconnect-Episode läuft: ohne FGS würde Android den Prozess einfrieren
+(Cached-App-Freezer, Doze-Whitelist schützt nicht), und ein erneuter FGS-Start
+aus dem Hintergrund wäre verboten (`ForegroundServiceStartNotAllowedException`).
+Den Hinweis nach einer erfolglosen Episode postet `ReconnectHintNotifier`
+(eigener Channel `cockpit_hints`, nicht aus dem Service → keine verwaiste
+ongoing-Notification).
 
 `onTaskRemoved` im FGS macht den "wenn aus Recents geswiped → komplett zu"-
 Effekt: `ble.disconnect()` → Heartbeat-Job stoppt → BLE-GATT zu, dann

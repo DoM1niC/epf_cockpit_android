@@ -215,7 +215,15 @@ Schritt 7+8 sind **essentiell** — ohne Heartbeat keine Telemetry und nach
   No-Ops. In unserer App rufen wir nur `disconnect()`, nie `close()`.
 - **`useAutoConnect(true)` ist langsam**: passiver Scan-Modus, mehrere
   Sekunden Latenz. Für initial Connect besser `useAutoConnect(false)`
-  mit kurzem Timeout.
+  mit kurzem Timeout. (Für das Warten im Hintergrund nutzt die App einen
+  separaten, nackten `connectGatt(autoConnect=true)`-Sentinel — dort ist die
+  Latenz egal, dafür braucht er keine App-CPU.)
+- **Disconnect-Reason mit `useAutoConnect(false)`**: Nordic setzt intern
+  `userDisconnected=true` und reicht `mapDisconnectStatusToReason` durch —
+  HCI 0x13 → 2, 0x08/0x00 → 10, 0x16 → 1, sonst −1. `REASON_LINK_LOSS` (3)
+  kommt nie. `REASON_TERMINATE_LOCAL_HOST` ist deshalb kein Beleg für ein
+  bewusstes Trennen; die App merkt sich eigene Trennungen selbst
+  (`ScooterManager.disconnectRequested`).
 - **Location-Deny-Guard**: Android (auch stock AOSP) verwirft BLE-Scans
   ohne `ScanFilter`, wenn `BLUETOOTH_SCAN` mit `neverForLocation` deklariert
   ist. Wir setzen daher immer mindestens einen Wildcard-`ScanFilter`.

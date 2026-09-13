@@ -31,6 +31,12 @@
          eingefroren wird, bitten wir den User aktiv um Akku-Whitelist. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!-- Kurze Partial-WakeLocks: aktive Reconnect-Versuche im Hintergrund,
+         Re-Auth direkt nach einem Reconnect, und der Heartbeat bei Display aus —
+         letzterer nur, nachdem eine CPU-Suspend-Lücke gemessen wurde. delay()
+         steht im CPU-Suspend, ein Foreground-Service hält die CPU nicht wach. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <!-- NFC nur fuer das Diagnose-Tool (NfcReadScreen) — lesen, niemals
          schreiben. required=false: App laeuft auch auf Geraeten ohne NFC,
          das Feature ist dann halt nicht sichtbar/nutzbar. -->

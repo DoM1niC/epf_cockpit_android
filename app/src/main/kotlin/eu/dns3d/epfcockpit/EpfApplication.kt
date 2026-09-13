@@ -4,13 +4,20 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import dagger.hilt.android.HiltAndroidApp
+import eu.dns3d.epfcockpit.service.ForegroundController
+import javax.inject.Inject
 
 @HiltAndroidApp
 class EpfApplication : Application() {
 
+    // Application-scoped statt nur in MainActivity: FGS-Lebenszyklus und
+    // Vorder-/Hintergrund-Erkennung müssen auch gelten, wenn der Prozess über
+    // Widget, Quick-Tile oder eine Notification-Action kalt startet.
+    @Suppress("unused") @Inject lateinit var foregroundController: ForegroundController
+
     override fun onCreate() {
-        super.onCreate()
         createNotificationChannels()
+        super.onCreate()  // Hilt injiziert hier → ForegroundController.init läuft
     }
 
     private fun createNotificationChannels() {
@@ -26,10 +33,23 @@ class EpfApplication : Application() {
             enableLights(false)
             enableVibration(false)
         }
-        nm.createNotificationChannel(channel)
+        // DEFAULT, aber still: soll auf dem Sperrbildschirm sichtbar sein, ohne zu klingeln.
+        val hints = NotificationChannel(
+            CHANNEL_HINTS,
+            "Verbindungs-Hinweise",
+            NotificationManager.IMPORTANCE_DEFAULT,
+        ).apply {
+            description = "Hinweis, wenn die automatische Suche nach dem Roller ohne Erfolg endet."
+            setSound(null, null)
+            setShowBadge(false)
+            enableLights(false)
+            enableVibration(false)
+        }
+        nm.createNotificationChannels(listOf(channel, hints))
     }
 
     companion object {
         const val CHANNEL_COCKPIT = "cockpit_connection"
+        const val CHANNEL_HINTS = "cockpit_hints"
     }
 }
