@@ -16,6 +16,16 @@ Gitea's `act`-Runner schluckt die Monorepo-Tag-Struktur von
 `gradle/actions` nicht. Fix: Den Step weglassen, stattdessen direkt
 `./gradlew assembleRelease` aufrufen (siehe `.gitea/workflows/nightly.yml`).
 
+### `Failed to find package 'tools'` im CI-Step „Setup Android SDK"
+
+`android-actions/setup-android@v3` installiert ohne `packages:` den Default
+`tools platform-tools`. Das veraltete Paket `tools` existiert im
+SDK-Repository nicht mehr, der Step bricht ab. Fix: `setup-android@v4` mit
+expliziter Paketliste — Plattform passend zu `compileSdk` (ab API 37 heißen
+die Pakete `platforms;android-37.0`, ein `android-37` gibt es nicht),
+Build-Tools = Default der AGP-Version. Beim Anheben von `compileSdk` oder AGP
+die Liste in `.gitea/workflows/nightly.yml` mitziehen.
+
 ## Runtime
 
 ### „Suche läuft aber findet nix" trotz BT an + Permissions OK
