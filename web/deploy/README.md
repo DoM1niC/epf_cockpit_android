@@ -176,9 +176,10 @@ docker compose logs -f                # Live-Log
   einfach per `tar` möglich, kein `docker cp` nötig.
 - Port `8787` ist nach außen exposed. Hinter nginx ändern auf
   `127.0.0.1:8787:8787` (siehe Kommentar in `docker-compose.yml`).
-- Image baut multi-stage: `node:22-bookworm-slim`-Builder kompiliert
-  `better-sqlite3` (native node-gyp) + Tailwind, Runtime-Stage hat nur
-  Produktion-Deps + Built-Assets (~250 MB statt ~600 MB).
+- Image baut multi-stage: `node:22-bookworm-slim`-Builder installiert die
+  Deps (`better-sqlite3` bringt fertige N-API-Binaries für x64/arm64 mit) und
+  baut Tailwind, Runtime-Stage hat nur Produktion-Deps + Built-Assets
+  (~250 MB statt ~600 MB).
 - Container läuft als unprivileged `node`-User (UID 1000) — der Bind-
   Mount muss demselben User gehören (`chown -R 1000:1000 ./data`).
 - Healthcheck pollt `/healthz` alle 30 s — `docker compose ps` zeigt

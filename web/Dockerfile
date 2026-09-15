@@ -1,7 +1,7 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.27
 #
 # EPF Cockpit Web — Node 22 + Express + better-sqlite3 + Tailwind.
-# Multi-stage: builder kompiliert native Deps + Tailwind, runtime hat nur
+# Multi-stage: builder installiert Deps + baut Tailwind, runtime hat nur
 # was zur Laufzeit gebraucht wird (kein g++, kein npm-Cache, keine dev-Deps).
 
 # ---------- builder ----------
@@ -9,10 +9,10 @@ FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 
-# Build-Tools für native node-gyp builds (better-sqlite3). Auf bookworm-slim
-# liefert prebuild-install meistens fertige Binaries, falls nicht baut npm
-# from source — dafür brauchen wir python3 + g++. Werden mit dem Stage
-# verworfen, im Runtime-Image nicht enthalten.
+# Build-Tools als Fallback für native Deps ohne passendes Prebuild.
+# better-sqlite3 bringt seit v13 fertige N-API-Binaries für x64/arm64 direkt
+# im Paket mit und kompiliert beim Install nicht mehr selbst. Werden mit dem
+# Stage verworfen, im Runtime-Image nicht enthalten.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 make g++ \
     && rm -rf /var/lib/apt/lists/*
