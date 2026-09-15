@@ -1,27 +1,27 @@
 [versions]
-agp = "9.3.1"
-kotlin = "2.4.10"
+agp = "9.4.0"
+kotlin = "2.4.20"
 # KSP2-Ära: entkoppeltes Schema (kein "kotlin-ksp"-Präfix mehr), die KSP-Version
 # ist nicht mehr an eine bestimmte Kotlin-Version gepaart.
-ksp = "2.3.10"
+ksp = "2.3.12"
 hilt = "2.60.1"
 hiltNavigation = "1.4.0"
 coreKtx = "1.19.0"
 lifecycle = "2.11.0"
 activityCompose = "1.13.0"
-composeBom = "2026.06.01"
+composeBom = "2026.09.00"
 # Material3 bleibt explizit auf der 1.5.0-Alpha-Linie: stable 1.4.0 (vom BOM
 # gepinnt) hat die @ExperimentalMaterial3ExpressiveApi-Fläche entfernt, die diese
 # App nutzt. Stable 1.5.x existiert noch nicht.
-material3 = "1.5.0-alpha25"
-navigationCompose = "2.9.8"
+material3 = "1.5.0-alpha28"
+navigationCompose = "2.10.1"
 coroutines = "1.11.0"
-room = "2.8.4"
+room = "2.8.5"
 datastore = "1.2.1"
 nordicBle = "2.11.0"
 accompanistPermissions = "0.37.3"
 splashscreen = "1.2.0"
-okhttp = "5.4.0"
+okhttp = "5.5.0"
 kotlinxSerialization = "1.11.0"
 errorprone = "2.50.0"
 junit = "4.13.2"

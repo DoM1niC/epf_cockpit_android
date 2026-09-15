@@ -238,8 +238,8 @@ di/             — Hilt-AppModule (Room-DB-Provider)
 
 Voraussetzungen:
 - JDK 21 (lokal + CI) — `source/target/jvmTarget = 21`
-- Android SDK 36 (`compileSdk = 36`, `minSdk = 31`)
-- Gradle 9.5 via Wrapper (AGP 9.2)
+- Android SDK 37 (`compileSdk = 37`, `targetSdk = 36`, `minSdk = 31`)
+- Gradle 9.7 via Wrapper (AGP 9.4)
 
 ```bash
 ./gradlew assembleDebug                 # Debug-APK

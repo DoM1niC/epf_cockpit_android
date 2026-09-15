@@ -4,12 +4,12 @@ Kurzdoku für Mitlesende — wer Code anpassen will, findet hier die Landkarte.
 
 ## Tech-Stack
 
-- **Kotlin 2.1**, **Jetpack Compose** (`compose-bom 2024.12`)
+- **Kotlin 2.4**, **Jetpack Compose** (`compose-bom 2026.09`)
 - **Material 3 Expressive** (`material3:1.5.0-alpha`) mit Dynamic Color
 - **Hilt** für DI, **Navigation Compose** für Routing
 - **Nordic Android BLE Library** für GATT-Stack-Komfort
 - **Room** für Trip-Historie, **DataStore Preferences** für Settings
-- **Min SDK 31** (Android 12), **Target/Compile SDK 36**
+- **Min SDK 31** (Android 12), **Target SDK 36**, **Compile SDK 37**
 
 ## Modul-Übersicht
 

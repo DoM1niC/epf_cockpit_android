@@ -43,6 +43,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -498,14 +499,21 @@ private fun MaxSpeedSection(
     parking: Boolean,
     onApply: (Int) -> Unit,
 ) {
-    // Slider-Draft hängt am gespeicherten Wert — wenn der sich nach einem
-    // erfolgreichen Apply ändert, snapped der Slider mit. remember(savedKmh)
-    // re-initialisiert das State-Object bei jedem savedKmh-Update.
-    var sliderDraft by remember(savedKmh) { mutableStateOf(savedKmh.toFloat()) }
+    // Der SliderState hält den Entwurf und hängt am gespeicherten Wert — wenn
+    // der sich nach einem erfolgreichen Apply ändert, snapped der Slider mit.
+    // remember(savedKmh) re-initialisiert das State-Object bei jedem
+    // savedKmh-Update (rememberSliderState hat keine Keys, taugt dafür nicht).
+    val sliderState = remember(savedKmh) {
+        SliderState(
+            value = savedKmh.toFloat(),
+            steps = 28, // (30 - 1 - 1) = 28 Zwischenstops → 1 km/h-Granularität
+            trackRange = 1f..30f,
+        )
+    }
     // roundToInt statt toInt: M3-Slider snapt intern auf Float-Werte mit
     // leichten Rundungsfehlern (21.999... → toInt = 21). Mit roundToInt
     // treffen wir jede Integer-Stufe sauber.
-    val draftKmh = sliderDraft.roundToInt().coerceIn(1, 30)
+    val draftKmh = sliderState.value.roundToInt().coerceIn(1, 30)
     val isExperimental = draftKmh > 20
 
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -539,10 +547,7 @@ private fun MaxSpeedSection(
                 else MaterialTheme.colorScheme.primary,
     )
     Slider(
-        value = sliderDraft,
-        onValueChange = { sliderDraft = it },
-        valueRange = 1f..30f,
-        steps = 28, // (30 - 1 - 1) = 28 Zwischenstops → 1 km/h-Granularität
+        state = sliderState,
         colors = if (isExperimental) SliderDefaults.colors(
             thumbColor = MaterialTheme.colorScheme.tertiary,
             activeTrackColor = MaterialTheme.colorScheme.tertiary,

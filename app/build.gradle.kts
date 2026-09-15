@@ -58,9 +58,9 @@ val hasReleaseKeystore = resolvedSigning != null
 
 android {
     namespace = "eu.dns3d.epfcockpit"
-    // compileSdk 37 nötig: die gebumpten Deps (compose 1.12-alpha, core-ktx
-    // 1.19.0) verlangen Compile gegen API 37. targetSdk bleibt 36 (kein Opt-in
-    // in neues Runtime-Verhalten).
+    // compileSdk 37 nötig: die gebumpten Deps (compose 1.12, core-ktx 1.19.0,
+    // navigation-compose 2.10) verlangen Compile gegen API 37 (minCompileSdk).
+    // targetSdk bleibt 36 (kein Opt-in in neues Runtime-Verhalten).
     compileSdk = 37
 
     defaultConfig {
