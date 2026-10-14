@@ -548,6 +548,9 @@ private fun MaxSpeedSection(
     )
     Slider(
         state = sliderState,
+        // Seit material3 1.5.0-beta01 Pflicht: Mit Callback setzt der Slider den
+        // State nicht mehr selbst, das Zurückschreiben übernimmt der Aufrufer.
+        onValueChange = { sliderState.value = it },
         colors = if (isExperimental) SliderDefaults.colors(
             thumbColor = MaterialTheme.colorScheme.tertiary,
             activeTrackColor = MaterialTheme.colorScheme.tertiary,
