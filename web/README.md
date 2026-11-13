@@ -67,13 +67,19 @@ The contract is JSON-per-text-frame:
 
 ```jsonc
 {"type":"hello","scooterName":"HW_EF043840","scooterAddress":"AA:BB:..","authenticated":true,"app":"epf_cockpit_android","appVersion":"0.1.0"}
-{"type":"telemetry","ts":1700000000000,"speedKmh":12.3,"batteryPercent":85,"voltageV":36.2,"currentA":4.1,"powerW":148,"controllerTempC":32,"tripKm":1.23,"totalKm":412.5,"parking":false,"rideModeStand":false}
+{"type":"telemetry","ts":1700000000000,"speedKmh":12.3,"batteryPercent":85,"voltageV":36.2,"currentA":4.1,"powerW":148,"controllerTempC":32,"tripKm":1.23,"totalKm":412.5,"parking":false,"rideModeStand":false,"lightOn":true,"motorTempC":29}
 {"type":"state","connected":true,"authenticated":true,"scooterName":"HW_EF043840"}
 {"type":"trip_start","ts":1700000000000,"tripId":"<uuid-v4>"}
 {"type":"trip_end","tripId":"<uuid-v4>","ts":1700000300000,"distanceKm":1.5,"energyWh":42.3,"durationS":300,"maxSpeedKmh":22.1,"avgSpeedKmh":18.0}
 ```
 
 Browsers consume the same shape on `/ws/live`.
+
+Telemetry semantics: `parking` is the park state as shown in the app (intent
+latch — the raw status bit 5 is also set when the scooter is unlocked in
+Stand-Stop mode). `rideModeStand` is `true` (Stand-Stop) / `false` (Kick-Start),
+`null` from older app versions. `lightOn` and `motorTempC` are optional — older
+app versions omit them.
 
 ## Security — shared-token auth
 

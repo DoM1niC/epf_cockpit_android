@@ -112,9 +112,17 @@ und [`web/src/ingest.js`](../web/src/ingest.js). Eine Änderung am Format
 
 ```json
 {"type":"hello","scooterName":"HW_EF043840","scooterAddress":"AA:BB:..","authenticated":true,"app":"epf_cockpit_android","appVersion":"0.1.0"}
-{"type":"telemetry","ts":1700000000000,"speedKmh":12.3,"batteryPercent":85,"voltageV":36.2,"currentA":4.1,"powerW":148,"controllerTempC":32,"tripKm":1.23,"totalKm":412.5,"parking":false,"rideModeStand":null}
+{"type":"telemetry","ts":1700000000000,"speedKmh":12.3,"batteryPercent":85,"voltageV":36.2,"currentA":4.1,"powerW":148,"controllerTempC":32,"tripKm":1.23,"totalKm":412.5,"parking":false,"rideModeStand":true,"lightOn":true,"motorTempC":29}
 {"type":"state","connected":true,"authenticated":true,"scooterName":"HW_EF043840"}
 ```
+
+- `parking` = Park-Zustand wie in der App (Intent-Latch aus dem `ParkController`),
+  **nicht** das rohe Telemetrie-Bit 5 — das ist auch im entsperrten
+  Stand-Stop-Modus gesetzt (daher zeigte das Web früher „Parking: an").
+- `rideModeStand` = gewählter Modus (`true` Stand-Stop, `false` Kick-Start);
+  ältere App-Versionen schicken `null` → Web zeigt „–".
+- `lightOn` (Frontlicht, aus Telemetrie-Bit `headLightSw`) und `motorTempC` sind
+  optional und fehlen bei älteren App-Versionen.
 
 ## Cleartext-Traffic
 

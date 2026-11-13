@@ -52,33 +52,76 @@ object ControlFrames {
         0xA5.toByte(), 0xFF.toByte(), 0x00, 0x00, 0x00, 0x00, 0x00, 0x5A.toByte(),
     )
 
-    // === Discrete control frames captured from the official app ===
+    // === Pulse-Plus-Statusframe ===
     //
-    // Pulse Plus uses a flags byte where:
-    //   bit 7 = ride mode  (set = Stand-Stop, clear = Kick-Start)
-    //   bit 5 = park       (set = parked,   clear = active)
-    //   bits 1..0 = gear   (always observed as 2 in sniffs)
+    // `AF 00 0A <flags> 00 06 0F <g3> <CRC-LE>` — der Controller bekommt immer
+    // den KOMPLETTEN Soll-Zustand, kein Delta. Bit-Layout des Flags-Bytes laut
+    // dekompilierter offizieller App (`BleCore.setBaseParams` → `sendMonitor`,
+    // Bits LSB-first aus `BaseParams`):
     //
-    // Sniff-verified flag combinations:
-    //   0x82  =  Active + Stand   → "Parking OFF" / "Mode Kick" (official app
-    //                                reuses this single frame for both actions)
-    //   0x22  =  Parked + Kick    → "Parking ON"
-    //   0xA2  =  Parked + Stand   → "Mode Stand-Stop" (also what the EPF app
-    //                                sends when the user changes the speed slider)
+    //   bit 0..1  gearPosition       (wir senden immer 2, wie die offizielle App)
+    //   bit 2     headLightSw        Frontlicht
+    //   bit 3     atmosphereLightSw  beim Pulse Plus = Tageskilometer-Reset
+    //                                (SettingsFragment „reset_distance" setzt genau
+    //                                dieses Bit; ZydDash dokumentiert bit3 = trip reset)
+    //   bit 4     cruiseControlSw
+    //   bit 5     bootMode           (Zydtech-Name; bei uns Teil von Park/Stand)
+    //   bit 6     metricInchSw
+    //   bit 7     lockSw
     //
-    // All frames carry the canonical payload tail `… 06 0F <g3> <CRC-LE>`
-    // where g3 is the gear-3 max km/h. The official app hardcodes 0x14 = 20 km/h,
-    // but the controller accepts higher values byte-for-byte (sniff #3 observed
-    // g3 = 0x16 = 22 km/h being sent by the original app when its slider sits at
-    // its top notch — i.e. the EPF app adds its own +2 tolerance offset over
-    // the displayed value, the controller just gets the raw byte).
+    // Sniff-verifizierte Park/Mode-Kombinationen (Licht aus):
+    //   0x22  Parking ON
+    //   0x82  Kick-Start  (= „Parking OFF" der offiziellen App)
+    //   0xA2  Stand-Stop  (auch das, was die EPF-App beim Speed-Slider sendet)
     //
-    // We expose builder functions instead of static byte arrays so the user's
-    // saved max-speed survives a park/unpark or mode toggle — otherwise every
-    // toggle would reset g3 back to 20.
+    // Weil jedes Frame den kompletten Zustand trägt, MUSS das Licht-Bit in jedem
+    // Mode/Speed-Frame mitgeschickt werden — sonst schaltet z.B. ein Mode-Wechsel
+    // das Licht ungewollt aus.
+    //
+    // Licht live verifiziert am Pulse Plus (HW_EF043840, Nov 2026):
+    //   - entsperrt: 0xA6 / 0x86 schaltet das Licht ein, 0xA2 / 0x82 aus;
+    //     Telemetrie-Bit 2 (`headLightSw`) folgt nach ~0,5 s.
+    //   - geparkt: Bit 2 wird ignoriert, und beim Parken schaltet der
+    //     Controller das Licht selbst ab. Park-Frames senden das Bit daher
+    //     nie — sie bleiben byte-identisch mit dem gesnifften 0x22.
+    //
+    // g3 = Max-km/h für Gang 3. Die offizielle App hardcodet 0x14 = 20 km/h, der
+    // Controller nimmt höhere Werte aber byteweise an (Echo-Sync, siehe README).
 
     private const val PULSE_GEAR1_KMH: Byte = 6
     private const val PULSE_GEAR2_KMH: Byte = 15
+
+    const val FLAG_GEAR_2 = 0x02
+    const val FLAG_LIGHT = 0x04
+    const val FLAG_TRIP_RESET = 0x08
+    const val FLAG_PARKED = 0x20          // 0x22 = Parking ON
+    const val FLAG_KICK = 0x80            // 0x82 = Kick-Start
+    const val FLAG_STAND = 0xA0           // 0xA2 = Stand-Stop
+
+    /**
+     * Baut ein Pulse-Plus-Statusframe aus dem gewünschten Gesamt-Zustand.
+     *
+     * @param parked   true → Parking ON (Mode wird dabei nicht kodiert, wie 0x22)
+     * @param stand    nur relevant wenn nicht geparkt: Stand-Stop vs Kick-Start
+     * @param light    Frontlicht an (nur entsperrt wirksam, geparkt nie gesendet)
+     * @param resetTrip Tageskilometer zurücksetzen (einmalig, danach wieder ohne senden)
+     */
+    fun pulseState(
+        parked: Boolean,
+        stand: Boolean,
+        light: Boolean = false,
+        resetTrip: Boolean = false,
+        g3MaxKmh: Int = 20,
+    ): ByteArray {
+        var flags = FLAG_GEAR_2 or when {
+            parked -> FLAG_PARKED
+            stand -> FLAG_STAND
+            else -> FLAG_KICK
+        }
+        if (light && !parked) flags = flags or FLAG_LIGHT
+        if (resetTrip) flags = flags or FLAG_TRIP_RESET
+        return pulseFrame(flags.toByte(), g3MaxKmh)
+    }
 
     /**
      * Builds a Pulse-Plus state frame: `AF 00 0A <flags> 00 06 0F <g3> <CRC-LE>`.
@@ -99,16 +142,20 @@ object ControlFrames {
     }
 
     /** Parking OFF — unlock the scooter from P-mode (also = Mode Kick-Start). */
-    fun parkingOff(g3MaxKmh: Int = 20): ByteArray = pulseFrame(0x82.toByte(), g3MaxKmh)
+    fun parkingOff(g3MaxKmh: Int = 20, light: Boolean = false): ByteArray =
+        pulseState(parked = false, stand = false, light = light, g3MaxKmh = g3MaxKmh)
 
     /** Parking ON — engage the park lock. */
-    fun parkingOn(g3MaxKmh: Int = 20): ByteArray = pulseFrame(0x22.toByte(), g3MaxKmh)
+    fun parkingOn(g3MaxKmh: Int = 20, light: Boolean = false): ByteArray =
+        pulseState(parked = true, stand = false, light = light, g3MaxKmh = g3MaxKmh)
 
-    /** Ride mode Stand-Stop — parks AND switches to stand mode in one frame. */
-    fun modeStandStop(g3MaxKmh: Int = 20): ByteArray = pulseFrame(0xA2.toByte(), g3MaxKmh)
+    /** Ride mode Stand-Stop (0xA2). */
+    fun modeStandStop(g3MaxKmh: Int = 20, light: Boolean = false): ByteArray =
+        pulseState(parked = false, stand = true, light = light, g3MaxKmh = g3MaxKmh)
 
     /** Ride mode Kick-Start — byte-identical to [parkingOff] (unparks + kick mode). */
-    fun modeKickStart(g3MaxKmh: Int = 20): ByteArray = parkingOff(g3MaxKmh)
+    fun modeKickStart(g3MaxKmh: Int = 20, light: Boolean = false): ByteArray =
+        parkingOff(g3MaxKmh, light)
 
     fun build(state: ControlState): ByteArray {
         var flags = (state.gear and 0x03)

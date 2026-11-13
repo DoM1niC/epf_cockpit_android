@@ -222,6 +222,29 @@ class BleRepository @Inject constructor(
      */
     @Volatile private var cachedRideModeStand: Boolean = true
 
+    /** Aktuell gewählter Ride-Mode (true = Stand-Stop) — für den Web-Stream. */
+    val rideModeStand: Boolean get() = cachedRideModeStand
+
+    /**
+     * Frontlicht-Zustand. Quelle ist das Telemetrie-Bit `headLightSw` (live
+     * verifiziert: folgt dem echten Licht nach ~0,5 s, auch wenn der Controller
+     * es beim Parken selbst abschaltet). Nach einem eigenen Kommando gilt der
+     * kommandierte Wert für [LIGHT_CONFIRM_MS] optimistisch, damit der Schalter
+     * nicht zurückspringt, bevor die Telemetrie nachzieht.
+     * `null` = noch keine Telemetrie / getrennt.
+     */
+    private val _lightOn = MutableStateFlow<Boolean?>(null)
+    val lightOn: StateFlow<Boolean?> = _lightOn.asStateFlow()
+    @Volatile private var lightPendingUntil = 0L
+
+    private fun commandLight(on: Boolean) {
+        _lightOn.value = on
+        lightPendingUntil = SystemClock.elapsedRealtime() + LIGHT_CONFIRM_MS
+    }
+
+    /** Setting „Licht beim Entsperren einschalten" (Live-Cache). */
+    @Volatile private var cachedAutoLightOnUnlock: Boolean = false
+
     init {
         // Settings → Cache spiegeln, damit Frame-Builder synchron lesen können
         // ohne Coroutine-Hop. Erste Emission liefert auch sofort den Persistenz-
@@ -230,6 +253,7 @@ class BleRepository @Inject constructor(
             settings.flow.collect { snap ->
                 cachedMaxSpeedKmh = snap.gear3MaxKmh.coerceIn(1, 40)
                 cachedRideModeStand = snap.rideModeStand
+                cachedAutoLightOnUnlock = snap.autoLightOnUnlock
                 val old = cachedSnap
                 cachedSnap = snap
                 if (old != null && (old.reconnectWhileLocked != snap.reconnectWhileLocked ||
@@ -243,6 +267,27 @@ class BleRepository @Inject constructor(
         scope.launch {
             manager.telemetry.collect { t ->
                 if (t != null && t.speedKmh >= RIDING_SPEED_KMH) lastMovingAtElapsed = SystemClock.elapsedRealtime()
+            }
+        }
+        // Licht-Zustand aus der Telemetrie übernehmen (außer während ein eigenes
+        // Kommando noch auf Bestätigung wartet). Status-Wort-Änderungen loggen
+        // wir auf INFO — Diagnose für Licht/Park/Lock-Bits am echten Roller.
+        scope.launch {
+            var lastWord = -1
+            manager.telemetry.collect { t ->
+                if (t == null) {
+                    lastWord = -1
+                    return@collect
+                }
+                if (t.statusWord != lastWord) {
+                    Log.i(TAG, "status word: 0x%04X → 0x%04X (trip=%.1f km)".format(lastWord.coerceAtLeast(0), t.statusWord, t.tripKm))
+                    lastWord = t.statusWord
+                }
+                val bit = t.headlightOn
+                if (_lightOn.value != bit && SystemClock.elapsedRealtime() >= lightPendingUntil) {
+                    Log.i(TAG, "headlight (telemetry): ${_lightOn.value} → $bit")
+                    _lightOn.value = bit
+                }
             }
         }
         // Ein erfolgreicher (Re-)Connect entwertet einen alten Hinweis.
@@ -269,6 +314,7 @@ class BleRepository @Inject constructor(
                         // sonst sieht der User nach dem Disconnect noch ~2.7s
                         // ein Phantom-Pending bevor die Timeouts durch sind.
                         parkController.onDisconnected()
+                        _lightOn.value = null
                         when {
                             event.userInitiated || userDisconnected ->
                                 _connection.value = ConnectionState.Disconnected
@@ -1117,6 +1163,10 @@ class BleRepository @Inject constructor(
 
     companion object {
         private const val TAG = "BleRepository"
+        /** Pause zwischen Trip-Reset-Frame und dem Frame, das das Reset-Bit wieder löscht. */
+        private const val TRIP_RESET_RELEASE_MS = 600L
+        /** So lange gilt ein kommandierter Licht-Zustand, bevor die Telemetrie gewinnt. */
+        private const val LIGHT_CONFIRM_MS = 2_000L
 
         /**
          * Maximale AKTIVE Reconnect-Versuche pro Runde, bevor wir aufgeben und
@@ -1279,33 +1329,69 @@ class BleRepository @Inject constructor(
     // damit der nicht durch das nächste Toggle wieder auf einen alten Wert
     // resettet wird.
 
-    fun setParking(on: Boolean) {
-        val g3 = cachedMaxSpeedKmh
-        val frame = if (on) {
-            ControlFrames.parkingOn(g3)            // 0x22 — parken
-        } else {
-            // Park-OFF im aktuell gewählten Mode senden, damit ein Park-OFF nicht
-            // ungewollt auf Kick wechselt: der generische parkingOff-Frame (0x82)
-            // IST der Kick-Frame. Stand → 0xA2 (entparkt + Stand), Kick → 0x82.
-            if (cachedRideModeStand) ControlFrames.modeStandStop(g3) else ControlFrames.modeKickStart(g3)
+    /** Licht-Bit für das nächste Statusframe: aktueller Zustand. */
+    private fun currentLight(): Boolean = _lightOn.value == true
+
+    /**
+     * Statusframe für den AKTUELLEN Park/Mode-Zustand (Latch + gewählter Mode).
+     * Unbekannter Park-Zustand zählt als geparkt — lieber sperren als
+     * ungewollt entsperren. Caller sperren die UI bei unbekanntem Zustand.
+     */
+    private fun currentStateFrame(light: Boolean = currentLight(), resetTrip: Boolean = false): ByteArray =
+        ControlFrames.pulseState(
+            parked = parkController.parkingDisplay.value != false,
+            stand = cachedRideModeStand,
+            light = light,
+            resetTrip = resetTrip,
+            g3MaxKmh = cachedMaxSpeedKmh,
+        )
+
+    /**
+     * Entsperren schaltet das Licht ein, wenn der User das in den Settings
+     * aktiviert hat. Liefert das Licht-Bit für das Entsperr-Frame und zieht
+     * den Licht-Zustand optimistisch mit.
+     */
+    private fun lightForUnlock(): Boolean {
+        if (cachedAutoLightOnUnlock && !currentLight()) {
+            Log.i(TAG, "auto-light: Licht beim Entsperren an")
+            commandLight(true)
         }
-        parkController.setParking(target = on, frame = frame, label = if (on) "park-on" else "park-off")
+        return currentLight()
+    }
+
+    fun setParking(on: Boolean) {
+        if (!on) lightForUnlock()
+        // Park-OFF im aktuell gewählten Mode senden, damit ein Park-OFF nicht
+        // ungewollt auf Kick wechselt: der generische parkingOff-Frame (0x82)
+        // IST der Kick-Frame. Stand → 0xA2 (entparkt + Stand), Kick → 0x82.
+        // Frame pro Resend frisch bauen (Licht kann sich dazwischen ändern).
+        parkController.setParking(target = on, label = if (on) "park-on" else "park-off") {
+            ControlFrames.pulseState(
+                parked = on,
+                stand = cachedRideModeStand,
+                light = currentLight(),
+                g3MaxKmh = cachedMaxSpeedKmh,
+            )
+        }
     }
 
     /**
      * Ride mode toggle. `stand=true` → Stand-Stop (must be pushed before
-     * motor engages, scooter also parks). `stand=false` → Kick-Start
-     * (goes on throttle alone, scooter also unparks).
-     * NB: this overlaps with [setParking] because the official app uses the
-     * same frames for both — switching modes also flips the park state.
+     * motor engages). `stand=false` → Kick-Start (goes on throttle alone).
+     * NB: both frames also unpark the scooter — the official app uses the
+     * same frames for "Parking OFF" and the mode buttons.
      */
     fun setRideMode(stand: Boolean) {
-        val g3 = cachedMaxSpeedKmh
-        val frame = if (stand) ControlFrames.modeStandStop(g3) else ControlFrames.modeKickStart(g3)
+        val wasParked = parkController.parkingDisplay.value == true
+        val light = if (wasParked) lightForUnlock() else currentLight()
+        val frame = ControlFrames.pulseState(
+            parked = false, stand = stand, light = light, g3MaxKmh = cachedMaxSpeedKmh,
+        )
         // Direkter Write, NICHT durch die Verify-Logik (sonst Spinner/Fehler am
         // falschen Control). Ein Mode-Wechsel deaktiviert physisch das Parken,
         // also den Park-Latch sofort auf "entparkt" setzen, damit der Switch
         // mitzieht und der State stimmt.
+        cachedRideModeStand = stand
         manager.writeLowFrame(frame, label = if (stand) "mode-stand" else "mode-kick")
         parkController.notePark(false)
     }
@@ -1313,7 +1399,7 @@ class BleRepository @Inject constructor(
     /**
      * Setzt die Max-Geschwindigkeit (byte [7] = g3) durch ein Stand-Stop-Frame
      * mit dem neuen Wert — mirror dem Verhalten der offiziellen EPF-App, die
-     * beim Slider-Move ebenfalls Park+Stand sendet (Sniff #3 bestätigt). Der
+     * beim Slider-Move ebenfalls Stand sendet (Sniff #3 bestätigt). Der
      * neue Wert wird persistiert und in den Cache geschrieben, sodass das
      * nächste Park-/Mode-Frame ihn weiter trägt.
      *
@@ -1324,7 +1410,7 @@ class BleRepository @Inject constructor(
     fun setMaxSpeed(kmh: Int) {
         val clamped = kmh.coerceIn(1, 40)
         cachedMaxSpeedKmh = clamped
-        val frame = ControlFrames.modeStandStop(clamped)
+        val frame = ControlFrames.modeStandStop(clamped, light = currentLight())
         // Direkter Write, NICHT durch die Verify-Logik (kein Phantom-Park-Pending
         // auf Dashboard/Widget/Tile). Das Frame ist ein Stand-Mode-Frame und
         // deaktiviert physisch das Parken — Latch entsprechend auf "entparkt".
@@ -1332,6 +1418,42 @@ class BleRepository @Inject constructor(
         parkController.notePark(false)
         scope.launch { settings.setGearLimits(g1 = 6, g2 = 15, g3 = clamped) }
     }
+
+    /**
+     * Frontlicht schalten: aktueller Mode-Zustand + neues Licht-Bit. Nur
+     * entsperrt — geparkt ignoriert der Controller das Bit (live verifiziert).
+     * Zweimal gesendet (blind retry wie beim Parken) — das Frame ist ein
+     * absoluter Zustand, Doppel-Empfang ist harmlos.
+     */
+    fun setLight(on: Boolean) {
+        if (parkController.parkingDisplay.value != false) return
+        commandLight(on)
+        controlJob?.cancel()
+        controlJob = scope.launch {
+            repeat(2) { i ->
+                manager.writeLowFrame(currentStateFrame(light = on), label = if (on) "light-on" else "light-off")
+                if (i == 0) delay(150)
+            }
+        }
+    }
+
+    /**
+     * Tageskilometer (Trip) am Roller zurücksetzen. Die offizielle App setzt
+     * dafür im Statusframe Bit 3 (`atmosphereLightSw`). Wir senden den
+     * aktuellen Zustand einmal MIT Reset-Bit und kurz danach ohne, damit das
+     * Bit nicht im Controller stehen bleibt.
+     */
+    fun resetTrip() {
+        if (parkController.parkingDisplay.value == null) return
+        controlJob?.cancel()
+        controlJob = scope.launch {
+            manager.writeLowFrame(currentStateFrame(resetTrip = true), label = "trip-reset")
+            delay(TRIP_RESET_RELEASE_MS)
+            manager.writeLowFrame(currentStateFrame(), label = "trip-reset-release")
+        }
+    }
+
+    private var controlJob: Job? = null
 
     fun setBlinkerton(on: Boolean) = manager.sendAt(AtCommands.setVoiceOff(on))
 }

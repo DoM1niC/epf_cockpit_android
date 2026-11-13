@@ -36,8 +36,11 @@ sealed interface StreamMessage {
         val controllerTempC: Double,
         val tripKm: Double,
         val totalKm: Double,
+        /** Park-Zustand wie in der App angezeigt (Intent-Latch, nicht das mehrdeutige Roh-Bit). */
         val parking: Boolean,
         val rideModeStand: Boolean?,
+        val lightOn: Boolean? = null,
+        val motorTempC: Double? = null,
     ) : StreamMessage
 
     @Serializable

@@ -209,8 +209,13 @@ class TelemetryStreamer @Inject constructor(
                 controllerTempC = t.controllerTempC.toDouble(),
                 tripKm = t.tripKm.toDouble(),
                 totalKm = t.totalKm.toDouble(),
-                parking = t.parking,
-                rideModeStand = null,  // not in telemetry — user-controlled, sent via state if needed
+                // Park + Mode wie in der App: das Telemetrie-Bit 5 ist mehrdeutig
+                // (geparkt ODER Stand-Mode) — daher kam im Web „Parking: an“ bei
+                // entsperrtem Roller im Stand-Mode.
+                parking = ble.parkingDisplay.value ?: t.parking,
+                rideModeStand = ble.rideModeStand,
+                lightOn = ble.lightOn.value,
+                motorTempC = t.motorTempC.toDouble(),
             )
         )
     }

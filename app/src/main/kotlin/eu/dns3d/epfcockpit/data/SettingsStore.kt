@@ -70,6 +70,9 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
          *  Wird im Hello/State-Frame ans Dashboard geschickt — null = Dashboard
          *  zeigt "E-Scooter" als Fallback. */
         val scooterFriendlyName: String?,
+        /** Beim Entsperren (Parking aus) das Frontlicht automatisch einschalten.
+         *  Default aus — kein Lichtzwang, manuell bleibt es jederzeit schaltbar. */
+        val autoLightOnUnlock: Boolean,
     )
 
     val flow: Flow<Snapshot> = context.dataStore.data.map { p ->
@@ -94,6 +97,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             trackLocation = p[KEY_TRACK_LOCATION] ?: false,
             trackLocationIdle = p[KEY_TRACK_LOCATION_IDLE] ?: false,
             scooterFriendlyName = p[KEY_SCOOTER_FRIENDLY_NAME]?.takeIf { it.isNotBlank() },
+            autoLightOnUnlock = p[KEY_AUTO_LIGHT_ON_UNLOCK] ?: false,
         )
     }
 
@@ -179,6 +183,10 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         context.dataStore.edit { p -> p[KEY_TRACK_LOCATION_IDLE] = enabled }
     }
 
+    suspend fun setAutoLightOnUnlock(enabled: Boolean) {
+        context.dataStore.edit { p -> p[KEY_AUTO_LIGHT_ON_UNLOCK] = enabled }
+    }
+
     suspend fun setScooterFriendlyName(name: String?) {
         context.dataStore.edit { p ->
             val trimmed = name?.trim().orEmpty()
@@ -206,5 +214,6 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val KEY_TRACK_LOCATION = booleanPreferencesKey("track_location")
         val KEY_TRACK_LOCATION_IDLE = booleanPreferencesKey("track_location_idle")
         val KEY_SCOOTER_FRIENDLY_NAME = stringPreferencesKey("scooter_friendly_name")
+        val KEY_AUTO_LIGHT_ON_UNLOCK = booleanPreferencesKey("auto_light_on_unlock")
     }
 }

@@ -79,10 +79,37 @@ Sniff-verifizierte Werte:
 | `0x82` | `AF 00 0A 82 00 06 0F 14 97 79` | **Parking OFF** = **Kick Start Mode**  |
 | `0xA2` | `AF 00 0A A2 00 06 0F 14 16 BE` | **Stand Stop Mode**                    |
 
-**OP-Bit-Layout (Hypothese aus Bit-Pattern)**:
-- Bit 1 (`0x02`) = immer gesetzt (Frame-Typ-Marker)
-- Bit 5 (`0x20`) = Park-Bit (1 = Park ON)
-- Bit 7 (`0x80`) = Mode-Bit (1 = Stand-Stop, 0 = Kick-Start)
+**OP-Bit-Layout** laut dekompilierter offizieller App
+(`BleCore.setBaseParams` → `sendMonitor`; das Byte wird LSB-first aus
+`BaseParams` zusammengesetzt):
+
+| Bit | Maske  | Zydtech-Name        | Bedeutung beim Pulse Plus                                  |
+|-----|--------|---------------------|------------------------------------------------------------|
+| 0-1 | `0x03` | `gearPosition`      | immer `2` gesendet                                         |
+| 2   | `0x04` | `headLightSw`       | **Frontlicht** — live verifiziert, siehe unten            |
+| 3   | `0x08` | `atmosphereLightSw` | **Tageskilometer-Reset** (offizielle App „reset_distance") |
+| 4   | `0x10` | `cruiseControlSw`   | ungenutzt                                                  |
+| 5   | `0x20` | `bootMode`          | Teil der Park/Mode-Kombination                             |
+| 6   | `0x40` | `metricInchSw`      | ungenutzt                                                  |
+| 7   | `0x80` | `lockSw`            | Teil der Park/Mode-Kombination                             |
+
+Unsere App behandelt Park/Mode als die drei sniff-verifizierten Kombinationen
+`0x22` / `0x82` / `0xA2` und setzt Bit 2/3 nur zusätzlich.
+
+**Frontlicht (Bit 2)**, live verifiziert am Pulse Plus (Nov 2026):
+- entsperrt: `0xA6` / `0x86` schaltet das Licht ein, `0xA2` / `0x82` aus.
+  Telemetrie-Bit 2 (`headLightSw`) folgt nach ~0,5 s.
+- geparkt: Bit 2 wird ignoriert (`0x26` lässt das Licht aus), und beim Parken
+  schaltet der Controller ein brennendes Licht selbst ab. Unsere Park-Frames
+  senden Bit 2 deshalb nie.
+- Weil jedes Frame den kompletten Zustand trägt, muss Bit 2 in Mode-/Speed-
+  Frames mitgesendet werden — sonst schaltet ein Mode-Wechsel das Licht aus.
+
+**Tageskilometer-Reset (Bit 3)**: Die offizielle App ruft dafür
+`setBaseParams(2, true)` auf, setzt also nur Bit 3 im aktuellen Zustand
+(ZydDash dokumentiert für den ePF-1 ebenfalls „bit3 = trip reset"). Unsere App
+sendet den aktuellen Zustand einmal mit Bit 3 und 600 ms später ohne.
+**Noch nicht live am Roller getestet.**
 
 **Wichtig**: `0x82` ist byte-identisch für „Parking OFF" und „Kick Start"
 — in der offiziellen App lösen beide Buttons dasselbe Frame aus, weil
@@ -136,7 +163,7 @@ Die offizielle App liest die Bytes 21-22 als **ein u16 BE Bitfeld**
 
 | u16-Bit | Byte/Bit  | Zydtech-Name       | Bemerkung                          |
 |---------|-----------|--------------------|-------------------------------------|
-| 2       | [22]·2    | `headLightSw`      |                                     |
+| 2       | [22]·2    | `headLightSw`      | Frontlicht an (live verifiziert)    |
 | 5       | [22]·5    | `bootMode`         | = unser „Park-Echo", siehe unten    |
 | 6       | [22]·6    | `metricInchSw`     |                                     |
 | 9       | [21]·1    | `cruiseControlSw`  |                                     |

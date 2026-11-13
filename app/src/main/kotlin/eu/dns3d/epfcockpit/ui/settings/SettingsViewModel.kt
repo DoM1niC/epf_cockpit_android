@@ -42,6 +42,14 @@ data class SettingsUiState(
     val authenticated: Boolean = false,
     /** True wenn Roller parkt — Voraussetzung um Max-Speed *sicher* zu senden. */
     val parking: Boolean = false,
+    /** Park-Zustand bekannt (erste Telemetrie da) — Voraussetzung für Statusframes. */
+    val parkingKnown: Boolean = false,
+    /** Roller steht (< 1 km/h) — Trip-Reset nur im Stand. */
+    val standing: Boolean = false,
+    /** Tageskilometer laut Roller, `null` ohne Telemetrie. */
+    val tripKm: Float? = null,
+    /** Frontlicht beim Entsperren automatisch einschalten. */
+    val autoLightOnUnlock: Boolean = false,
     /** Opt-in für GPS-Waypoints pro Trip, default OFF. */
     val trackLocation: Boolean = false,
     /** Opt-in: GPS auch im Idle/Parking an das Dashboard senden (nur live, nicht in Room). */
@@ -62,7 +70,8 @@ class SettingsViewModel @Inject constructor(
         store.flow,
         ble.connection,
         ble.telemetry,
-    ) { s, conn, tele ->
+        ble.parkingDisplay,
+    ) { s, conn, tele, parkDisp ->
         SettingsUiState(
             gear1 = s.gear1MaxKmh,
             gear2 = s.gear2MaxKmh,
@@ -78,6 +87,10 @@ class SettingsViewModel @Inject constructor(
             streamingToken = s.streamingToken.orEmpty(),
             authenticated = (conn as? ConnectionState.Connected)?.authenticated == true,
             parking = tele?.parking == true,
+            parkingKnown = parkDisp != null,
+            standing = tele != null && tele.speedKmh <= 1.0f,
+            tripKm = tele?.tripKm,
+            autoLightOnUnlock = s.autoLightOnUnlock,
             trackLocation = s.trackLocation,
             trackLocationIdle = s.trackLocationIdle,
             scooterFriendlyName = s.scooterFriendlyName.orEmpty(),
@@ -158,6 +171,15 @@ class SettingsViewModel @Inject constructor(
      */
     fun setMaxSpeed(kmh: Int) {
         ble.setMaxSpeed(kmh)
+    }
+
+    fun setAutoLightOnUnlock(enabled: Boolean) {
+        viewModelScope.launch { store.setAutoLightOnUnlock(enabled) }
+    }
+
+    /** Tageskilometer am Roller auf 0 (UI fragt vorher nach). */
+    fun resetTrip() {
+        ble.resetTrip()
     }
 
     fun setAutoConnect(enabled: Boolean) {

@@ -39,12 +39,19 @@ data class Telemetry(
      *  experiments but isn't the park indicator.)
      */
     val statusByte: Int,
+    /**
+     * Komplettes Status-Bitfeld [21..22] als u16 BE (Zydtech „registerZero").
+     * Low-Byte == [statusByte]. Nur für Logging/Diagnose.
+     */
+    val statusWord: Int = statusByte,
     val rawHex: String,
 ) {
     val watts: Float get() = voltage * currentAmps
     val absWatts: Float get() = kotlin.math.abs(watts)
     val isRegenerating: Boolean get() = currentAmps < -0.05f
     val parking: Boolean get() = (statusByte and 0x20) != 0
+    /** u16-Bit 2 = `headLightSw` laut dekompilierter offizieller App. */
+    val headlightOn: Boolean get() = (statusByte and 0x04) != 0
 }
 
 object TelemetryDecoder {
@@ -99,6 +106,7 @@ object TelemetryDecoder {
             // 25-byte telemetry frames include a status byte at [22] before
             // the CRC; shorter frames don't, fall back to 0.
             statusByte = if (frame.size >= 25) u8(22) else 0,
+            statusWord = if (frame.size >= 25) u16(21) else 0,
             rawHex = frame.toHex(),
         ).also { t ->
             android.util.Log.v(TAG, "telemetry: status=0x%02X parking=%b gear=%d batt=%d%% v=%.1f"

@@ -22,12 +22,14 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.ElectricScooter
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Nfc
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -47,6 +49,7 @@ import androidx.compose.material3.SliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -413,6 +416,17 @@ fun SettingsScreen(
                 )
             }
 
+            SectionCard("Roller", leadingIcon = Icons.Filled.ElectricScooter) {
+                ScooterSection(
+                    autoLightOnUnlock = state.autoLightOnUnlock,
+                    onAutoLightChange = vm::setAutoLightOnUnlock,
+                    canResetTrip = state.authenticated && state.parkingKnown && state.standing,
+                    authenticated = state.authenticated,
+                    tripKm = state.tripKm,
+                    onResetTrip = vm::resetTrip,
+                )
+            }
+
             SectionCard("Max-Geschwindigkeit", leadingIcon = Icons.Filled.Speed) {
                 MaxSpeedSection(
                     savedKmh = state.gear3,
@@ -489,6 +503,87 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(20.dp))
         }
+    }
+}
+
+@Composable
+private fun ScooterSection(
+    autoLightOnUnlock: Boolean,
+    onAutoLightChange: (Boolean) -> Unit,
+    canResetTrip: Boolean,
+    authenticated: Boolean,
+    tripKm: Float?,
+    onResetTrip: () -> Unit,
+) {
+    var confirmReset by remember { mutableStateOf(false) }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Licht beim Entsperren einschalten", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Schaltet das Frontlicht automatisch ein, sobald du den Roller " +
+                    "entsperrst (Parking aus) — so vergisst du es nicht. Ausschalten " +
+                    "kannst du es jederzeit über den Licht-Schalter im Dashboard.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.size(12.dp))
+        Switch(checked = autoLightOnUnlock, onCheckedChange = onAutoLightChange)
+    }
+
+    Spacer(Modifier.height(16.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Tageskilometer",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                tripKm?.let { "%.1f km".format(it) } ?: "–",
+                style = MaterialTheme.typography.titleLarge,
+            )
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    FilledTonalButton(
+        onClick = { confirmReset = true },
+        enabled = canResetTrip,
+        shape = MaterialTheme.shapes.large,
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("Tageskilometer zurücksetzen") }
+    val hint = when {
+        !authenticated -> "Nicht verbunden — verbinde dich zuerst über das Dashboard"
+        !canResetTrip -> "Nur im Stand möglich"
+        else -> null
+    }
+    if (hint != null) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            hint,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    if (confirmReset) {
+        AlertDialog(
+            onDismissRequest = { confirmReset = false },
+            title = { Text("Tageskilometer zurücksetzen?") },
+            text = {
+                Text(
+                    "Der Trip-Zähler am Roller wird auf 0 gesetzt. Gesamtkilometer " +
+                        "und die in der App gespeicherten Fahrten bleiben erhalten.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmReset = false; onResetTrip() }) { Text("Zurücksetzen") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmReset = false }) { Text("Abbrechen") }
+            },
+        )
     }
 }
 

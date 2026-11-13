@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.automirrored.filled.DirectionsRun
 import androidx.compose.material.icons.filled.ElectricalServices
 import androidx.compose.material.icons.filled.LocalParking
+import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
@@ -79,6 +81,7 @@ fun DashboardScreen(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val blinkertonOff by vm.blinkertonOff.collectAsStateWithLifecycle()
+    val lightOn by vm.lightOn.collectAsStateWithLifecycle()
     val controlsLocked by vm.controlsLocked.collectAsStateWithLifecycle()
     val telemetry = state.telemetry
 
@@ -114,10 +117,12 @@ fun DashboardScreen(
         val controls = DashControls(
             parking = state.parking,
             blinkertonOff = blinkertonOff,
+            lightOn = lightOn,
             rideMode = state.rideMode,
             locked = controlsLocked,
             onParkingToggle = vm::toggleParking,
             onBlinkertonToggle = vm::toggleBlinkerton,
+            onLightToggle = vm::toggleLight,
             onRideModeChange = vm::setRideMode,
         )
         when (state.dashboardLayout) {
@@ -144,10 +149,12 @@ fun DashboardScreen(
 private class DashControls(
     val parking: Boolean?,
     val blinkertonOff: Boolean?,
+    val lightOn: Boolean?,
     val rideMode: RideMode,
     val locked: Boolean,
     val onParkingToggle: () -> Unit,
     val onBlinkertonToggle: () -> Unit,
+    val onLightToggle: () -> Unit,
     val onRideModeChange: (RideMode) -> Unit,
 )
 
@@ -628,49 +635,69 @@ private fun ControlSection(
             )
         }
         if (compact) {
-            // Parking + Blinkerton nebeneinander, um die höchste Block-Höhe zu sparen.
+            // Je zwei Schalter nebeneinander, um Block-Höhe zu sparen.
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SwitchRow(
-                    icon = Icons.Filled.LocalParking,
-                    label = "Parking",
-                    checked = controls.parking == true,
-                    enabled = !controls.locked,
-                    onToggle = controls.onParkingToggle,
-                    modifier = Modifier.weight(1f),
-                    compact = true,
-                )
-                SwitchRow(
-                    icon = if (controls.blinkertonOff == true) Icons.Filled.NotificationsActive
-                    else Icons.Filled.NotificationsOff,
-                    label = "Blinkerton",
-                    checked = controls.blinkertonOff == true,
-                    enabled = controls.blinkertonOff != null && !controls.locked,
-                    onToggle = controls.onBlinkertonToggle,
-                    modifier = Modifier.weight(1f),
-                    compact = true,
-                )
+                ParkingSwitch(controls, Modifier.weight(1f), compact = true)
+                LightSwitch(controls, Modifier.weight(1f), compact = true)
             }
             RideModeRow(controls)
+            BlinkertonSwitch(controls, compact = true)
         } else {
-            SwitchRow(
-                icon = Icons.Filled.LocalParking,
-                label = "Parking",
-                checked = controls.parking == true,
-                enabled = !controls.locked,
-                onToggle = controls.onParkingToggle,
-            )
+            ParkingSwitch(controls)
             RideModeRow(controls)
-            SwitchRow(
-                icon = if (controls.blinkertonOff == true) Icons.Filled.NotificationsActive
-                else Icons.Filled.NotificationsOff,
-                label = "Blinkerton",
-                checked = controls.blinkertonOff == true,
-                enabled = controls.blinkertonOff != null && !controls.locked,
-                onToggle = controls.onBlinkertonToggle,
-            )
+            LightSwitch(controls)
+            BlinkertonSwitch(controls)
         }
     }
 }
+
+@Composable
+private fun ParkingSwitch(
+    controls: DashControls,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    compact: Boolean = false,
+) = SwitchRow(
+    icon = Icons.Filled.LocalParking,
+    label = "Parking",
+    checked = controls.parking == true,
+    enabled = !controls.locked,
+    onToggle = controls.onParkingToggle,
+    modifier = modifier,
+    compact = compact,
+)
+
+@Composable
+private fun LightSwitch(
+    controls: DashControls,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    compact: Boolean = false,
+) = SwitchRow(
+    icon = if (controls.lightOn == true) Icons.Filled.Lightbulb else Icons.Outlined.Lightbulb,
+    label = "Licht",
+    checked = controls.lightOn == true,
+    // Nur entsperrt: geparkt ignoriert der Controller das Licht-Bit und
+    // schaltet das Licht beim Parken selbst ab.
+    enabled = controls.lightOn != null && controls.parking == false && !controls.locked,
+    onToggle = controls.onLightToggle,
+    modifier = modifier,
+    compact = compact,
+)
+
+@Composable
+private fun BlinkertonSwitch(
+    controls: DashControls,
+    modifier: Modifier = Modifier.fillMaxWidth(),
+    compact: Boolean = false,
+) = SwitchRow(
+    icon = if (controls.blinkertonOff == true) Icons.Filled.NotificationsActive
+    else Icons.Filled.NotificationsOff,
+    label = "Blinkerton",
+    checked = controls.blinkertonOff == true,
+    enabled = controls.blinkertonOff != null && !controls.locked,
+    onToggle = controls.onBlinkertonToggle,
+    modifier = modifier,
+    compact = compact,
+)
 
 @Composable
 private fun RideModeRow(controls: DashControls) {

@@ -26,6 +26,14 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
   App-Neustart
 - **Blinkerton** ein/aus — Sprach-/Ton-Hinweise, Status wird live vom Scooter
   gelesen
+- **Frontlicht** ein/aus — Schalter im Dashboard (nur entsperrt; geparkt
+  ignoriert der Controller das Licht und schaltet es beim Parken selbst ab),
+  Zustand wird live aus der Telemetrie gelesen
+- **Licht beim Entsperren** (Settings, standardmäßig aus) — schaltet das
+  Frontlicht automatisch mit ein, sobald der Roller entsperrt wird; manuell
+  jederzeit wieder ausschaltbar
+- **Tageskilometer zurücksetzen** (Settings → Roller, mit Rückfrage, nur im
+  Stand) — setzt den Trip-Zähler am Roller auf 0
 - **Max-Geschwindigkeit** — Slider 1..30 km/h in den Settings, schickt einen
   `AF`-Stand-Stop-Frame mit dem neuen `g3`-Wert an den Controller. Apply-Button
   ist nur bei aktiver Verbindung + P-Modus enabled. **Echo-Sync**: der Roller

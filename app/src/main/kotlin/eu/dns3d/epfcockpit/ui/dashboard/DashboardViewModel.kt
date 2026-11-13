@@ -52,6 +52,9 @@ class DashboardViewModel @Inject constructor(
     /** Blinkerton-off state from the scooter; `null` until we get the first reply. */
     val blinkertonOff: StateFlow<Boolean?> = ble.voiceOff
 
+    /** Frontlicht; `null` bis zur ersten Telemetrie / nach Disconnect. */
+    val lightOn: StateFlow<Boolean?> = ble.lightOn
+
     /**
      * Block control toggles while the scooter is moving so the rider can't
      * accidentally tap Parking / Mode / Blinkerton mid-ride. 1.0 km/h gives
@@ -107,6 +110,10 @@ class DashboardViewModel @Inject constructor(
         _state.update { it.copy(rideMode = mode) }
         ble.setRideMode(stand = mode == RideMode.Stand)
         viewModelScope.launch { settings.setRideModeStand(mode == RideMode.Stand) }
+    }
+
+    fun toggleLight() {
+        ble.setLight(!(ble.lightOn.value ?: false))
     }
 
     fun toggleBlinkerton() {

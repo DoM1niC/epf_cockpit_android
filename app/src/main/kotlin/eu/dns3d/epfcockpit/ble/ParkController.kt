@@ -61,15 +61,20 @@ class ParkController(
     }
 
     /**
-     * Park-Kommando absetzen: Latch sofort auf [target] (optimistisch), [frame]
+     * Park-Kommando absetzen: Latch sofort auf [target] (optimistisch), das Frame
      * mehrfach senden (blind retry gegen verlorene NO_RESPONSE-Writes).
+     *
+     * [frame] wird pro Resend NEU gebaut: das Statusframe trägt den kompletten
+     * Soll-Zustand (inkl. Licht). Schaltet der User zwischen zwei Resends das
+     * Licht um, darf der nächste Resend den alten Licht-Zustand nicht
+     * zurückschreiben.
      */
-    fun setParking(target: Boolean, frame: ByteArray, label: String) {
+    fun setParking(target: Boolean, label: String, frame: () -> ByteArray) {
         _latch.value = target
         sendJob?.cancel()
         sendJob = scope.launch {
             repeat(RESENDS) { i ->
-                writeFrame(frame, label)
+                writeFrame(frame(), label)
                 if (i < RESENDS - 1) delay(RESEND_GAP_MS)
             }
             Log.d(TAG, "park frame sent ${RESENDS}x: $label target=$target")
