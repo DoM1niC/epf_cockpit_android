@@ -4,10 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>EPF OBS Widget</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%234DD0E1'/%3E%3Cg fill='none' stroke='%23031a1d' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round' transform='translate(4 4)'%3E%3Cpath d='m12 14 4-4'/%3E%3Cpath d='M3.34 19a10 10 0 1 1 17.32 0'/%3E%3C/g%3E%3C/svg%3E" />
   <link rel="stylesheet" href="/dist/app.css" />
   <link rel="stylesheet" href="/css/obs.css" />
 </head>
-<body class="font-sans select-none">
+<body class="obs font-sans select-none">
   <!--
     Query params:
       ?theme=light|dark        default dark (affects text color)
@@ -18,20 +19,20 @@
     <div class="flex items-center gap-2">
       <!-- gauge -->
       <svg class="icon accent-teal" style="width:48px;height:48px;stroke-width:2.5" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
-      <span id="obs-speed" class="font-bold leading-none accent-teal" style="font-size:96px;">--</span>
-      <span class="text-white/80" style="font-size:24px;">km/h</span>
+      <span id="obs-speed" class="obs-num font-bold leading-none accent-teal" style="font-size:96px;">--</span>
+      <span class="obs-unit obs-dim" style="font-size:24px;">km/h</span>
     </div>
     <div class="flex items-center gap-2">
       <!-- battery -->
-      <svg class="icon text-white" style="width:28px;height:28px;stroke-width:2.5" viewBox="0 0 24 24" aria-hidden="true"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/></svg>
-      <span id="obs-batt" class="font-semibold leading-none text-white" style="font-size:48px;">--</span>
-      <span class="text-white/80" style="font-size:18px;">%</span>
+      <svg class="icon obs-fg" style="width:28px;height:28px;stroke-width:2.5" viewBox="0 0 24 24" aria-hidden="true"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/></svg>
+      <span id="obs-batt" class="obs-num font-semibold leading-none obs-fg" style="font-size:48px;">--</span>
+      <span class="obs-unit obs-dim" style="font-size:18px;">%</span>
     </div>
     <div class="flex items-center gap-2">
       <!-- zap -->
-      <svg class="icon text-white" style="width:24px;height:24px;stroke-width:2.5;fill:currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
-      <span id="obs-power" class="font-medium leading-none text-white" style="font-size:32px;">--</span>
-      <span class="text-white/80" style="font-size:16px;">W</span>
+      <svg class="icon obs-fg" style="width:24px;height:24px;stroke-width:2.5;fill:currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+      <span id="obs-power" class="obs-num font-medium leading-none obs-fg" style="font-size:32px;">--</span>
+      <span class="obs-unit obs-dim" style="font-size:16px;">W</span>
     </div>
   </div>
 

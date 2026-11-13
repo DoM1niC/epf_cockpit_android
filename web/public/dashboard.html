@@ -1,152 +1,228 @@
 <!doctype html>
-<html lang="de" class="h-full">
+<html lang="de" data-theme="dark" data-theme-mode="dark">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>EPF Cockpit Live</title>
-  <link rel="stylesheet" href="/dist/app.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#07090d" />
+  <title>EPF Cockpit · Live</title>
+  <link rel="preload" href="/vendor/inter/inter-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="/vendor/uplot/uPlot.min.css" />
   <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%234DD0E1'/%3E%3Cg fill='none' stroke='%23031a1d' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round' transform='translate(4 4)'%3E%3Cpath d='m12 14 4-4'/%3E%3Cpath d='M3.34 19a10 10 0 1 1 17.32 0'/%3E%3C/g%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/dist/app.css" />
+  <script src="/js/ui.js"></script>
 </head>
-<body class="h-full bg-[var(--color-surface-0)] text-[var(--color-on-surface)] antialiased">
-  <header class="px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-white/5 sticky top-0 z-10 bg-[var(--color-surface-0)]/90 backdrop-blur">
-    <h1 class="text-lg sm:text-xl font-semibold tracking-tight flex items-center gap-2">
-      <!-- bike (lucide) -->
-      <svg class="icon w-5 h-5 text-[var(--color-brand-teal)]" viewBox="0 0 24 24" aria-hidden="true"><circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/></svg>
-      EPF Cockpit Live
-    </h1>
-    <span id="conn-dot"
-          class="inline-block w-2.5 h-2.5 rounded-full bg-gray-500"
-          title="Kein Scooter verbunden"></span>
-    <span id="conn-text" class="text-sm text-[var(--color-on-surface-dim)] truncate max-w-[40vw]">Kein Scooter</span>
-    <nav class="ml-auto flex gap-3 sm:gap-4 text-sm text-[var(--color-on-surface-dim)]">
-      <a class="hover:text-[var(--color-brand-teal)] inline-flex items-center gap-1.5" href="/">
-        <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Live
+<body class="app">
+  <header class="app-header">
+    <div class="app-header-inner">
+      <a class="brand" href="/" data-nav aria-label="EPF Cockpit – Live">
+        <span class="brand-mark">
+          <svg class="icon w-[18px] h-[18px]" style="stroke-width:2.4" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+        </span>
+        <span class="brand-text">EPF Cockpit <span>Telemetrie</span></span>
       </a>
-      <a class="hover:text-[var(--color-brand-teal)] inline-flex items-center gap-1.5" href="/history">
-        <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
-        Verlauf
-      </a>
-      <a class="hover:text-[var(--color-brand-teal)] inline-flex items-center gap-1.5" href="/obs">
-        <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>
-        OBS
-      </a>
-    </nav>
+      <nav class="nav-seg" aria-label="Hauptnavigation">
+        <a href="/" data-nav aria-current="page">
+          <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Live
+        </a>
+        <a href="/history" data-nav>
+          <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+          Verlauf
+        </a>
+        <a href="/obs" data-nav>
+          <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>
+          OBS
+        </a>
+      </nav>
+      <div class="header-actions">
+        <span id="conn-pill" class="pill conn-pill" data-tone="muted" title="Kein Scooter verbunden">
+          <span id="conn-dot" class="pill-dot"></span>
+          <span id="conn-text" class="conn-text">Kein Scooter</span>
+        </span>
+        <button id="theme-toggle" type="button" class="icon-btn" aria-label="Design wechseln">
+          <svg class="icon w-4 h-4 theme-icon theme-icon-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+          <svg class="icon w-4 h-4 theme-icon theme-icon-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+          <svg class="icon w-4 h-4 theme-icon theme-icon-auto" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+        </button>
+      </div>
+    </div>
   </header>
 
-  <main class="p-3 sm:p-6 grid gap-4 sm:gap-6 max-w-7xl mx-auto">
-    <!-- Big tiles -->
-    <section class="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-      <div class="rounded-2xl bg-[var(--color-surface-1)] p-4 sm:p-5">
-        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] flex items-center gap-1.5">
-          <!-- gauge -->
-          <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
-          Geschwindigkeit
-        </div>
-        <div class="mt-2 text-3xl sm:text-4xl md:text-5xl font-semibold text-[var(--color-brand-teal)] tabular-nums">
-          <span id="t-speed">--</span><span class="text-base sm:text-lg md:text-xl text-[var(--color-on-surface-dim)] ml-1">km/h</span>
-        </div>
-      </div>
-      <div class="rounded-2xl bg-[var(--color-surface-1)] p-4 sm:p-5">
-        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] flex items-center gap-1.5">
-          <!-- battery -->
-          <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/></svg>
-          Akku
-        </div>
-        <div class="mt-2 text-3xl sm:text-4xl md:text-5xl font-semibold text-[var(--color-brand-amber)] tabular-nums">
-          <span id="t-batt">--</span><span class="text-base sm:text-lg md:text-xl text-[var(--color-on-surface-dim)] ml-1">%</span>
-        </div>
-      </div>
-      <div class="rounded-2xl bg-[var(--color-surface-1)] p-4 sm:p-5 col-span-2 md:col-span-1">
-        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] flex items-center gap-1.5">
-          <!-- zap -->
-          <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
-          Leistung
-        </div>
-        <div class="mt-2 text-3xl sm:text-4xl md:text-5xl font-semibold text-[var(--color-brand-magenta)] tabular-nums">
-          <span id="t-power">--</span><span class="text-base sm:text-lg md:text-xl text-[var(--color-on-surface-dim)] ml-1">W</span>
-        </div>
-      </div>
-      <div class="rounded-2xl bg-[var(--color-surface-2)] p-3 sm:p-4">
-        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] flex items-center gap-1.5">
-          <!-- plug-zap -->
-          <svg class="icon w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="m2 22 3-3"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m18 3-4 4h6l-4 4"/></svg>
-          Spannung
-        </div>
-        <div class="mt-1 text-xl sm:text-2xl font-medium tabular-nums"><span id="t-volt">--</span><span class="text-sm text-[var(--color-on-surface-dim)] ml-1">V</span></div>
-      </div>
-      <div class="rounded-2xl bg-[var(--color-surface-2)] p-3 sm:p-4">
-        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] flex items-center gap-1.5">
-          <!-- activity -->
-          <svg class="icon w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          Strom
-        </div>
-        <div class="mt-1 text-xl sm:text-2xl font-medium tabular-nums"><span id="t-amp">--</span><span class="text-sm text-[var(--color-on-surface-dim)] ml-1">A</span></div>
-      </div>
-      <div class="rounded-2xl bg-[var(--color-surface-2)] p-3 sm:p-4 col-span-2 md:col-span-1">
-        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] flex items-center gap-1.5">
-          <!-- thermometer -->
-          <svg class="icon w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>
-          Controller
-        </div>
-        <div class="mt-1 text-xl sm:text-2xl font-medium tabular-nums"><span id="t-temp">--</span><span class="text-sm text-[var(--color-on-surface-dim)] ml-1">°C</span></div>
+  <main class="page">
+    <!-- Hinweis, wenn kein Scooter verbunden ist bzw. der Server nicht
+         erreichbar ist. dashboard.js setzt data-kind + Texte. -->
+    <section id="offline-banner" class="banner" data-kind="scooter" role="status" hidden>
+      <span class="banner-icon">
+        <svg id="offline-icon-scooter" class="icon w-5 h-5" viewBox="0 0 24 24" aria-hidden="true"><path d="m17 17-5 5V12l-5 5"/><path d="m2 2 20 20"/><path d="M14.5 9.5 17 7l-5-5v4.5"/></svg>
+        <svg id="offline-icon-server" class="icon w-5 h-5 hidden" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/></svg>
+      </span>
+      <div class="min-w-0">
+        <div id="offline-title" class="banner-title">Kein Scooter verbunden</div>
+        <div id="offline-text" class="banner-text">Sobald die EPF-Cockpit-App mit dem Scooter verbunden ist, erscheinen hier die Live-Werte.</div>
       </div>
     </section>
 
-    <!-- Status chips -->
-    <section class="flex flex-wrap gap-2 text-xs sm:text-sm">
-      <span id="chip-parking"
-            class="px-3 py-1 rounded-full bg-[var(--color-surface-2)] text-[var(--color-on-surface-dim)] inline-flex items-center gap-1.5">
-        <!-- circle-parking -->
-        <svg class="icon w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9 17V7h4a3 3 0 0 1 0 6H9"/></svg>
-        Parking: --
-      </span>
-      <span id="chip-ridemode"
-            class="px-3 py-1 rounded-full bg-[var(--color-surface-2)] text-[var(--color-on-surface-dim)] inline-flex items-center gap-1.5">
-        <!-- footprints -->
-        <svg class="icon w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/></svg>
-        Modus: --
-      </span>
-      <span id="chip-scooter"
-            class="px-3 py-1 rounded-full bg-[var(--color-surface-2)] text-[var(--color-on-surface-dim)] truncate max-w-[60vw] inline-flex items-center gap-1.5">
-        <!-- bike -->
-        <svg class="icon w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true"><circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/></svg>
-        Scooter: --
-      </span>
+    <!-- Hero: Tacho + Kennzahlen -->
+    <section class="hero-grid" aria-label="Live-Werte">
+      <article class="card card-glow speed-card">
+        <div class="card-head">
+          <span class="label">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+            Geschwindigkeit
+          </span>
+          <span id="live-badge" class="live-badge" data-state="idle">
+            <span class="pill-dot"></span><span id="live-badge-text">Keine Daten</span>
+          </span>
+        </div>
+
+        <div class="gauge">
+          <svg viewBox="0 0 240 206" aria-hidden="true">
+            <defs>
+              <linearGradient id="gauge-grad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#1aa3b5" />
+                <stop offset="55%" stop-color="#4DD0E1" />
+                <stop offset="100%" stop-color="#b9f6ff" />
+              </linearGradient>
+            </defs>
+            <g id="gauge-ticks"></g>
+            <path class="gauge-track" d="M 49.29 190.71 A 100 100 0 1 1 190.71 190.71" />
+            <path id="gauge-value" class="gauge-value" d="M 49.29 190.71 A 100 100 0 1 1 190.71 190.71"
+                  pathLength="100" stroke-dasharray="100 100" stroke-dashoffset="100" />
+            <g id="gauge-knob" class="gauge-knob-group" style="transform: rotate(135deg)">
+              <circle class="gauge-knob" cx="220" cy="120" r="6.5" />
+            </g>
+            <text class="gauge-scale" x="74" y="198" text-anchor="start">0</text>
+            <text id="gauge-max" class="gauge-scale" x="166" y="198" text-anchor="end">30</text>
+          </svg>
+          <div class="gauge-center">
+            <div class="gauge-num"><span id="t-speed">–</span></div>
+            <div class="gauge-unit">km/h</div>
+          </div>
+        </div>
+
+        <div class="odo">
+          <div>
+            <span class="label">Tageskilometer</span>
+            <span class="odo-val"><span id="t-trip-km">–</span><small>km</small></span>
+          </div>
+          <div>
+            <span class="label">Gesamt</span>
+            <span class="odo-val"><span id="t-total-km">–</span><small>km</small></span>
+          </div>
+        </div>
+
+        <div class="status-row" aria-label="Fahrzeugstatus">
+          <span id="chip-scooter" class="pill" data-tone="muted">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10-5 5V2l5 5L7 17"/></svg>
+            <span class="pill-label">Scooter: –</span>
+          </span>
+          <span id="chip-parking" class="pill" data-tone="muted">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9 17V7h4a3 3 0 0 1 0 6H9"/></svg>
+            <span class="pill-label">Parken: –</span>
+          </span>
+          <span id="chip-ridemode" class="pill" data-tone="muted">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/></svg>
+            <span class="pill-label">Modus: –</span>
+          </span>
+          <span id="chip-light" class="pill" data-tone="muted" hidden>
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+            <span class="pill-label">Licht: –</span>
+          </span>
+        </div>
+      </article>
+
+      <div class="metrics-grid">
+        <article id="metric-batt" class="card card-glow metric metric-lg metric-batt">
+          <span class="label">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/></svg>
+            Akku
+          </span>
+          <div class="metric-value"><span id="t-batt">–</span><span class="metric-unit">%</span></div>
+          <svg id="spark-batt" class="spark hidden lg:block" viewBox="0 0 300 60" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
+          <div class="grid gap-2">
+            <div class="bar bar-batt" role="presentation"><div id="batt-bar" class="bar-fill"></div></div>
+            <div id="batt-caption" class="metric-caption">&nbsp;</div>
+          </div>
+        </article>
+
+        <article class="card card-glow metric metric-lg metric-power">
+          <span class="label">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+            Leistung
+          </span>
+          <div class="metric-value"><span id="t-power">–</span><span class="metric-unit">W</span></div>
+          <svg id="spark-power" class="spark hidden lg:block" viewBox="0 0 300 60" preserveAspectRatio="none" aria-hidden="true"><path class="spark-area"/><path class="spark-line"/></svg>
+          <div class="grid gap-2">
+            <div id="power-bar-wrap" class="bar bar-power" role="presentation"><div id="power-bar" class="bar-fill"></div></div>
+            <div id="power-caption" class="metric-caption">&nbsp;</div>
+          </div>
+        </article>
+
+        <article class="card metric metric-sm">
+          <span class="label">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="m2 22 3-3"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m18 3-4 4h6l-4 4"/></svg>
+            Spannung
+          </span>
+          <div class="metric-value"><span id="t-volt">–</span><span class="metric-unit">V</span></div>
+        </article>
+
+        <article class="card metric metric-sm">
+          <span class="label">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            Strom
+          </span>
+          <div class="metric-value"><span id="t-amp">–</span><span class="metric-unit">A</span></div>
+        </article>
+
+        <article class="card metric metric-sm metric-temp">
+          <span class="label">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></svg>
+            Temperatur
+          </span>
+          <div class="temp-pair">
+            <div>
+              <div class="metric-value"><span id="t-temp">–</span><span class="metric-unit">°C</span></div>
+              <div class="metric-caption">Controller</div>
+            </div>
+            <div id="motor-temp-wrap" hidden>
+              <div class="metric-value"><span id="t-motor-temp">–</span><span class="metric-unit">°C</span></div>
+              <div class="metric-caption">Motor</div>
+            </div>
+          </div>
+        </article>
+      </div>
     </section>
 
     <!-- Charts mit Zeitraum-Auswahl -->
-    <section class="grid gap-3 sm:gap-4">
-      <div class="flex items-center gap-2 flex-wrap">
-        <span class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mr-1 inline-flex items-center gap-1.5">
-          <!-- calendar-range -->
-          <svg class="icon w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><path d="M17 14h-6"/><path d="M13 18H7"/></svg>
-          Zeitraum
-        </span>
-        <div id="range-chips" class="flex gap-1.5 flex-wrap"></div>
-        <span id="range-status" class="ml-auto text-xs text-[var(--color-on-surface-dim)]"></span>
+    <section class="grid gap-3 sm:gap-4" aria-label="Diagramme">
+      <div class="section-head">
+        <h2 class="section-title">Verlauf</h2>
+        <div id="range-chips" class="seg" role="group" aria-label="Zeitraum"></div>
+        <span id="range-status" class="status-text sm:ml-auto"></span>
       </div>
-      <div class="grid md:grid-cols-2 gap-3 sm:gap-4">
-        <div class="rounded-2xl bg-[var(--color-surface-1)] p-3 sm:p-4">
-          <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mb-2 inline-flex items-center gap-1.5">
-            <svg class="icon w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
-            Geschwindigkeit
+      <div class="chart-grid">
+        <div class="card chart-card">
+          <div class="card-head">
+            <span class="swatch" style="--sw: var(--chart-teal)"></span>
+            <span class="label">Geschwindigkeit</span>
+            <span class="status-text ml-auto">km/h</span>
           </div>
           <div id="chart-speed" class="w-full"></div>
         </div>
-        <div class="rounded-2xl bg-[var(--color-surface-1)] p-3 sm:p-4">
-          <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mb-2 inline-flex items-center gap-1.5">
-            <svg class="icon w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
-            Leistung
+        <div class="card chart-card">
+          <div class="card-head">
+            <span class="swatch" style="--sw: var(--chart-magenta)"></span>
+            <span class="label">Leistung</span>
+            <span class="status-text ml-auto">W</span>
           </div>
           <div id="chart-power" class="w-full"></div>
         </div>
-        <div class="rounded-2xl bg-[var(--color-surface-1)] p-3 sm:p-4 md:col-span-2">
-          <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mb-2 inline-flex items-center gap-1.5">
-            <!-- battery -->
-            <svg class="icon w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true"><rect width="16" height="10" x="2" y="7" rx="2" ry="2"/><line x1="22" x2="22" y1="11" y2="13"/></svg>
-            Akku
+        <div class="card chart-card md:col-span-2">
+          <div class="card-head">
+            <span class="swatch" style="--sw: var(--chart-amber)"></span>
+            <span class="label">Akku</span>
+            <span class="status-text ml-auto">%</span>
           </div>
           <div id="chart-batt" class="w-full"></div>
         </div>
@@ -156,35 +232,37 @@
     <!-- Live-Karte. Versteckt bis das erste location-Frame ankommt — wenn der
          User die Standort-Übermittlung in der App nicht aktiviert hat, bleibt
          hier nichts zu sehen. -->
-    <section id="live-map-section" class="hidden">
-      <div class="rounded-2xl bg-[var(--color-surface-1)] p-3 sm:p-4">
-        <div class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mb-2 inline-flex items-center gap-1.5">
-          <!-- map-pin -->
-          <svg class="icon w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-          Standort live
-          <span id="live-map-meta" class="ml-auto text-[var(--color-on-surface-dim)] normal-case tracking-normal"></span>
+    <section id="live-map-section" class="hidden" aria-label="Standort">
+      <div class="card">
+        <div class="card-head mb-3">
+          <span class="label">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+            Standort live
+          </span>
+          <span id="live-map-meta" class="status-text ml-auto truncate"></span>
         </div>
-        <div class="relative">
-          <div id="live-map" class="w-full rounded-xl overflow-hidden" style="height: 320px; z-index: 0;"></div>
-          <!-- Zoom-Slider-Overlay (vertikal, links). z-index 401 = über Leaflet-Controls. -->
-          <div class="absolute left-2 top-2 z-[401] bg-[var(--color-surface-1)]/85 backdrop-blur rounded-lg px-2 py-3 flex flex-col items-center gap-2 select-none">
-            <span class="text-xs text-[var(--color-on-surface-dim)]">+</span>
+        <div class="map-frame">
+          <div id="live-map" class="w-full"></div>
+          <!-- Zoom-Slider-Overlay (vertikal, links). -->
+          <div class="map-overlay map-zoom">
+            <span aria-hidden="true">+</span>
             <input id="live-map-zoom" type="range" min="2" max="19" step="1"
-                   class="live-map-zoom-slider" />
-            <span class="text-xs text-[var(--color-on-surface-dim)]">−</span>
+                   class="live-map-zoom-slider" aria-label="Kartenzoom" />
+            <span aria-hidden="true">−</span>
           </div>
-          <!-- Layer-Switcher als Custom-Button-Stack (rechts oben).
-               Dunkel-Glas-Look + Brand-Teal fuer aktive Auswahl. dashboard.js
-               bindet die data-layer-Klicks und switched die Tile-Layer. -->
-          <div id="live-map-layers"
-               class="absolute right-2 top-2 z-[401] bg-[var(--color-surface-1)]/85 backdrop-blur rounded-lg p-1 flex flex-col gap-0.5 select-none text-xs font-medium">
-            <button type="button" data-layer="osm"
-                    class="map-layer-btn px-3 py-1.5 rounded-md text-[var(--color-on-surface-dim)] hover:text-white hover:bg-white/5 transition">Straße</button>
-            <button type="button" data-layer="sat"
-                    class="map-layer-btn px-3 py-1.5 rounded-md text-[var(--color-on-surface-dim)] hover:text-white hover:bg-white/5 transition">Satellit</button>
-            <button type="button" data-layer="topo"
-                    class="map-layer-btn px-3 py-1.5 rounded-md text-[var(--color-on-surface-dim)] hover:text-white hover:bg-white/5 transition">Topo</button>
+          <!-- Layer-Switcher (rechts oben). dashboard.js bindet die
+               data-layer-Klicks und schaltet die Tile-Layer um. -->
+          <div id="live-map-layers" class="map-overlay map-layers" role="group" aria-label="Kartenansicht">
+            <button type="button" data-layer="osm" class="map-layer-btn">Straße</button>
+            <button type="button" data-layer="sat" class="map-layer-btn">Satellit</button>
+            <button type="button" data-layer="topo" class="map-layer-btn">Topo</button>
           </div>
+          <!-- Auto-Follow: zeigt den Zustand, Klick zentriert sofort. -->
+          <button id="live-map-follow" type="button" class="map-overlay map-follow" data-follow="1"
+                  title="Karte folgt dem Scooter – Klick zentriert sofort">
+            <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><line x1="2" x2="5" y1="12" y2="12"/><line x1="19" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="5"/><line x1="12" x2="12" y1="19" y2="22"/><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3"/></svg>
+            <span id="live-map-follow-text">Folgt</span>
+          </button>
         </div>
       </div>
     </section>

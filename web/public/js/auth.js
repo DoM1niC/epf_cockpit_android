@@ -34,4 +34,20 @@
   }
 
   window.EpfAuth = { token, appendToken, fetchAuthed, wsUrl };
+
+  // Navigations-Links (data-nav) bekommen den Token angehängt. Die HTML-Routen
+  // (/, /history, /obs) sind serverseitig ebenfalls per VIEW_TOKEN geschützt —
+  // ohne ?token= würde ein Klick auf "Verlauf" sonst auf der 401-Seite landen.
+  function decorateNavLinks() {
+    if (!token) return;
+    document.querySelectorAll('a[data-nav]').forEach((a) => {
+      const href = a.getAttribute('href');
+      if (href && !/[?&]token=/.test(href)) a.setAttribute('href', appendToken(href));
+    });
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', decorateNavLinks);
+  } else {
+    decorateNavLinks();
+  }
 })();

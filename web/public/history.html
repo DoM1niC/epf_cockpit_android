@@ -1,70 +1,88 @@
 <!doctype html>
-<html lang="de" class="h-full">
+<html lang="de" data-theme="dark" data-theme-mode="dark">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>EPF Cockpit – Fahrtverlauf</title>
-  <link rel="stylesheet" href="/dist/app.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#07090d" />
+  <title>EPF Cockpit · Fahrtverlauf</title>
+  <link rel="preload" href="/vendor/inter/inter-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="/vendor/uplot/uPlot.min.css" />
   <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%234DD0E1'/%3E%3Cg fill='none' stroke='%23031a1d' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round' transform='translate(4 4)'%3E%3Cpath d='m12 14 4-4'/%3E%3Cpath d='M3.34 19a10 10 0 1 1 17.32 0'/%3E%3C/g%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/dist/app.css" />
+  <script src="/js/ui.js"></script>
 </head>
-<body class="h-full bg-[var(--color-surface-0)] text-[var(--color-on-surface)] antialiased">
-  <header class="px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-white/5 sticky top-0 z-10 bg-[var(--color-surface-0)]/90 backdrop-blur">
-    <h1 class="text-lg sm:text-xl font-semibold tracking-tight flex items-center gap-2">
-      <!-- history -->
-      <svg class="icon w-5 h-5 text-[var(--color-brand-teal)]" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
-      Fahrtverlauf
-    </h1>
-    <nav class="ml-auto flex gap-3 sm:gap-4 text-sm text-[var(--color-on-surface-dim)]">
-      <a class="hover:text-[var(--color-brand-teal)] inline-flex items-center gap-1.5" href="/">
-        <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Live
+<body class="app">
+  <header class="app-header">
+    <div class="app-header-inner">
+      <a class="brand" href="/" data-nav aria-label="EPF Cockpit – Live">
+        <span class="brand-mark">
+          <svg class="icon w-[18px] h-[18px]" style="stroke-width:2.4" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+        </span>
+        <span class="brand-text">EPF Cockpit <span>Telemetrie</span></span>
       </a>
-      <a class="hover:text-[var(--color-brand-teal)] inline-flex items-center gap-1.5" href="/history">
-        <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
-        Verlauf
-      </a>
-      <a class="hover:text-[var(--color-brand-teal)] inline-flex items-center gap-1.5" href="/obs">
-        <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>
-        OBS
-      </a>
-    </nav>
+      <nav class="nav-seg" aria-label="Hauptnavigation">
+        <a href="/" data-nav>
+          <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Live
+        </a>
+        <a href="/history" data-nav aria-current="page">
+          <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+          Verlauf
+        </a>
+        <a href="/obs" data-nav>
+          <svg class="icon w-4 h-4" viewBox="0 0 24 24" aria-hidden="true"><path d="m22 8-6 4 6 4V8Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>
+          OBS
+        </a>
+      </nav>
+      <div class="header-actions">
+        <button id="theme-toggle" type="button" class="icon-btn" aria-label="Design wechseln">
+          <svg class="icon w-4 h-4 theme-icon theme-icon-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+          <svg class="icon w-4 h-4 theme-icon theme-icon-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+          <svg class="icon w-4 h-4 theme-icon theme-icon-auto" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+        </button>
+      </div>
+    </div>
   </header>
 
-  <main class="p-3 sm:p-6 max-w-5xl mx-auto grid gap-4">
-    <div class="flex items-center gap-2 flex-wrap">
-      <span class="text-xs uppercase tracking-wide text-[var(--color-on-surface-dim)] mr-1 inline-flex items-center gap-1.5">
-        <!-- calendar-range -->
-        <svg class="icon w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><path d="M17 14h-6"/><path d="M13 18H7"/></svg>
-        Zeitraum
+  <main class="page page-narrow">
+    <section class="page-head">
+      <div>
+        <h1 class="page-title">Fahrtverlauf</h1>
+        <p class="page-sub">Aufgezeichnete Fahrten mit Strecke, Tempo, Energie und Route.</p>
+      </div>
+      <span id="filter-status" class="status-text" role="status"></span>
+    </section>
+
+    <div class="grid gap-3">
+      <div id="filter-chips" class="chip-row" role="group" aria-label="Zeitraum"></div>
+      <div id="custom-range-panel" class="hidden card">
+        <div class="flex flex-wrap items-end gap-3">
+          <label class="field">
+            Von
+            <input id="custom-range-from" type="date" />
+          </label>
+          <label class="field">
+            Bis
+            <input id="custom-range-to" type="date" />
+          </label>
+          <button id="custom-range-apply" type="button" class="btn">Übernehmen</button>
+          <span id="custom-range-error" class="text-xs text-[var(--magenta-ink)] hidden">Bitte gültige Daten wählen (Von ≤ Bis).</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Aggregat-Kennzahlen des gewählten Zeitraums (history.js füllt) -->
+    <section id="agg-stats" class="agg-grid" aria-label="Summen im Zeitraum" hidden></section>
+
+    <div id="trip-list" class="grid"></div>
+
+    <div id="empty-msg" class="hidden empty-state">
+      <span class="empty-state-icon">
+        <svg class="icon w-8 h-8" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/></svg>
       </span>
-      <div id="filter-chips" class="flex gap-1.5 flex-wrap"></div>
-      <span id="filter-status" class="ml-auto text-xs text-[var(--color-on-surface-dim)]"></span>
-    </div>
-    <div id="custom-range-panel"
-         class="hidden rounded-2xl bg-[var(--color-surface-1)] p-3 sm:p-4 flex flex-wrap items-end gap-3">
-      <label class="text-xs text-[var(--color-on-surface-dim)] flex flex-col gap-1">
-        Von
-        <input id="custom-range-from" type="date"
-               class="bg-[var(--color-surface-2)] text-[var(--color-on-surface)] text-sm rounded-lg px-2 py-1 border border-white/5 focus:outline-none focus:border-[var(--color-brand-teal)]" />
-      </label>
-      <label class="text-xs text-[var(--color-on-surface-dim)] flex flex-col gap-1">
-        Bis
-        <input id="custom-range-to" type="date"
-               class="bg-[var(--color-surface-2)] text-[var(--color-on-surface)] text-sm rounded-lg px-2 py-1 border border-white/5 focus:outline-none focus:border-[var(--color-brand-teal)]" />
-      </label>
-      <button id="custom-range-apply"
-              class="text-xs px-3 py-1.5 rounded-full bg-[var(--color-brand-teal)] text-black font-medium hover:opacity-90">
-        Übernehmen
-      </button>
-      <span id="custom-range-error" class="text-xs text-[var(--color-brand-magenta)] hidden">Bitte gültige Daten wählen (Von ≤ Bis).</span>
-    </div>
-    <div id="trip-list" class="grid gap-3"></div>
-    <div id="empty-msg"
-         class="hidden text-center text-[var(--color-on-surface-dim)] py-12">
-      <!-- calendar-x -->
-      <svg class="icon w-12 h-12 mx-auto mb-3 opacity-40" viewBox="0 0 24 24" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/><line x1="10" x2="14" y1="14" y2="18"/><line x1="14" x2="10" y1="14" y2="18"/></svg>
-      <div>Keine Fahrten in diesem Zeitraum.</div>
+      <div class="empty-state-title">Keine Fahrten in diesem Zeitraum.</div>
+      <div class="empty-state-text">Wähle oben einen größeren Zeitraum. Abgeschlossene Fahrten aus der App landen hier mit Strecke, Tempo und Route.</div>
     </div>
   </main>
 

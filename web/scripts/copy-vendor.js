@@ -4,6 +4,7 @@
 // Currently mirrored:
 //   - uPlot     -> public/vendor/uplot/
 //   - Leaflet   -> public/vendor/leaflet/ (incl. images/ for default markers)
+//   - Inter     -> public/vendor/inter/ (Variable-Font, latin + latin-ext)
 
 import { mkdir, copyFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -73,6 +74,24 @@ await copyDir(
   path.join(leafletSrc, 'images'),
   path.join(leafletDst, 'images'),
   'leaflet'
+);
+
+// --- Inter Variable (Schrift) ---
+// Self-hosted statt Google-Fonts-CDN. Nur die latin- und latin-ext-Subsets
+// (deutsche Umlaute stecken in latin) mit opsz+wght-Achse — die opsz-Achse
+// schaltet bei großen Ziffern automatisch auf den "Display"-Schnitt um.
+// Die @font-face-Regeln stehen in public/css/tailwind.css.
+await copyFiles(
+  path.join(root, 'node_modules', '@fontsource-variable', 'inter', 'files'),
+  path.join(root, 'public', 'vendor', 'inter'),
+  ['inter-latin-opsz-normal.woff2', 'inter-latin-ext-opsz-normal.woff2'],
+  'inter'
+);
+await copyFiles(
+  path.join(root, 'node_modules', '@fontsource-variable', 'inter'),
+  path.join(root, 'public', 'vendor', 'inter'),
+  ['LICENSE'],
+  'inter'
 );
 
 console.log('[copy-vendor] done');

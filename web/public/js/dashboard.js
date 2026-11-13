@@ -1,10 +1,14 @@
 // dashboard.js — live dashboard logic.
 // - Connects to /ws/live with exponential-backoff reconnect.
-// - Updates DOM tiles + status chips on every telemetry frame.
-// - Maintains a rolling 5-minute buffer for the two uPlot charts.
+// - Updates Tacho, Kennzahlen + Status-Pills on every telemetry frame.
+// - Maintains a rolling 5-minute buffer for the three uPlot charts.
+// - Gemeinsame Helfer (Theme, Zahlenformat, Chart-Theme, Tooltip) kommen aus
+//   /js/ui.js (window.EpfUi).
 
 (function () {
   'use strict';
+
+  const UI = window.EpfUi;
 
   const WINDOW_MS = 5 * 60 * 1000; // 5 minutes (live buffer)
   const buf = { ts: [], speed: [], power: [], batt: [] };
@@ -15,10 +19,10 @@
   const MIN_LIVE_WINDOW_S = 15;
   let liveWindowSeconds = DEFAULT_LIVE_WINDOW_S;
 
-  // Drag-to-Zoom im Live-Modus: User zieht eine Box, wir frieren den Chart
-  // auf diesen Bereich ein. range() liefert dann die frozen-Werte statt des
-  // rolling Fensters, sodass nachfolgende setData()-Aufrufe (1s-Frames) den
-  // Zoom nicht wegspülen. Doppelklick = Reset zurück auf Live-Rolling.
+  // Drag im Live-Modus friert den Chart auf den aktuellen Bereich ein.
+  // range() liefert dann die frozen-Werte statt des rolling Fensters, sodass
+  // nachfolgende setData()-Aufrufe (1s-Frames) den Zoom nicht wegspülen.
+  // Doppelklick = Reset zurück auf Live-Rolling.
   let liveDragFrozen = null;
 
   // Time-range presets for the chart selector. "live" = use the rolling
@@ -35,64 +39,61 @@
   ];
   let activeRange = RANGE_PRESETS[0];
   // Wenn nicht-live: gefrorenes from/to-Fenster, damit die Achsen-range()
-  // nicht weiterwandert während der User den Chart anschaut.
+  // nicht weiterwandert während der User den Chart anschaut. rangeFrom/To
+  // halten das ursprünglich geladene Fenster für den Doppelklick-Reset.
   let frozenFrom = null;
   let frozenTo = null;
+  let rangeFrom = null;
+  let rangeTo = null;
   const isLive = () => activeRange.live;
-
-  // uPlot Default-Werte sind US-locale (12h + M/D/YY). EU-Variante mit 24h-Zeit.
-  // Das Tick-Default ist *self-contained* (z.B. "19:52:03"), die Kontext-Zeile
-  // (year/month/day-Slot) bringt NUR das Datum dazu — keine Doppelung der Zeit.
-  // Vorher hatten wir auf Grenzen "DD.MM.YYYY HH:MM:SS" was zur Tick-Beschriftung
-  // ":58" doppelt und chaotisch wirkte.
-  const EU_AXIS_VALUES = [
-    [3600 * 24 * 365, "{YYYY}",            null,             null, null,           null, null, null, 1],
-    [3600 * 24 * 28,  "{MMM}",             "\n{YYYY}",       null, null,           null, null, null, 1],
-    [3600 * 24,       "{DD}.{MM}.",        "\n{YYYY}",       null, null,           null, null, null, 1],
-    [3600,            "{HH}:{mm}",         "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
-    [60,              "{HH}:{mm}",         "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
-    [1,               "{HH}:{mm}:{ss}",    "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
-    [0.001,           "{HH}:{mm}:{ss}.{fff}", "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
-  ];
-
-  // Cursor-Tooltip (Hover) — gleiches 24h/EU-Format wie Achsen.
-  const cursorTimeFmt = new Intl.DateTimeFormat('de-DE', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-  });
-  function cursorValue(_self, rawValue) {
-    return rawValue == null ? '--' : cursorTimeFmt.format(new Date(rawValue * 1000));
-  }
 
   // ---------- DOM helpers ----------
   const $ = (id) => document.getElementById(id);
-  const fmt = (v, digits = 0) =>
-    v == null || Number.isNaN(v) ? '--' : Number(v).toFixed(digits);
+  const num = UI.num;
+  const isNum = UI.isNum;
 
   function setText(id, text) {
     const el = $(id);
     if (el) el.textContent = text;
   }
 
-  // ---------- Charts ----------
-  // Auf schmalen Viewports (Mobile) ist 200 px im Quadrat-Verhältnis zu hoch
-  // und drängt die Tile-Reihe nach unten. 160 px gibt mehr Platz für die Werte.
-  function chartHeight() {
-    return window.innerWidth < 640 ? 160 : 200;
+  // Pill = <span class="pill" data-tone>…<span class="pill-label"/></span>.
+  // Nur das Label wird ersetzt, das Icon bleibt stehen.
+  function setPill(id, tone, label, title) {
+    const el = $(id);
+    if (!el) return;
+    el.dataset.tone = tone;
+    const lab = el.querySelector('.pill-label');
+    if (lab) lab.textContent = label;
+    else el.textContent = label;
+    if (title != null) el.title = title;
   }
 
-  // Mausrad-Zoom-Plugin für uPlot. Zwei Modi:
+  // ---------- Charts ----------
+  // Auf schmalen Viewports (Mobile) etwas flacher, damit mehr Platz für die
+  // Werte bleibt.
+  function chartHeight() {
+    return window.innerWidth < 640 ? 170 : 210;
+  }
+
+  function allCharts() {
+    return [chartSpeed, chartPower, chartBatt].filter(Boolean);
+  }
+  function setAllX(min, max) {
+    allCharts().forEach(u => u.setScale('x', { min, max }));
+  }
+
+  // Mausrad-Zoom + Drag-Pan-Plugin für uPlot. Zwei Modi:
   // - Live: ändert das anzeigbare Fenster (15..300s), Auto-Pan bleibt aktiv.
   //   Alle drei Charts werden synchron mitgezogen.
-  // - History: cursor-zentrierter Zoom über setScale, wirkt nur lokal.
+  // - History: cursor-zentrierter Zoom über setScale, alle Charts synchron.
   function wheelZoomPlugin({ factor = 0.85 } = {}) {
     return {
       hooks: {
-        // setSelect feuert nachdem der User eine Drag-Box gezogen hat. uPlot
-        // setzt danach automatisch setScale auf den eigenen Chart — das
-        // reicht uns aber nicht: im Live-Modus müssen wir alle drei Charts
-        // synchron einfrieren und range() umlenken, sonst zieht der nächste
-        // Telemetrie-Frame den Zoom sofort zurueck auf das rolling Fenster.
+        // setSelect feuert nachdem eine Drag-Box gezogen wurde (nur relevant,
+        // falls cursor.drag wieder aktiviert wird). Im Live-Modus alle drei
+        // Charts synchron einfrieren, sonst zieht der nächste Frame den Zoom
+        // sofort zurück auf das rolling Fenster.
         setSelect(u) {
           if (!isLive()) return;
           const w = u.select.width;
@@ -101,10 +102,8 @@
           const maxSec = u.posToVal(u.select.left + w, 'x');
           if (!(maxSec > minSec)) return;
           liveDragFrozen = { from: minSec * 1000, to: maxSec * 1000 };
-          chartSpeed && chartSpeed.setScale('x', { min: minSec, max: maxSec });
-          chartPower && chartPower.setScale('x', { min: minSec, max: maxSec });
-          chartBatt  && chartBatt.setScale('x',  { min: minSec, max: maxSec });
-          setRangeStatus('Live · pausiert · Doppelklick = Reset');
+          setAllX(minSec, maxSec);
+          setRangeStatus('Live · pausiert · Doppelklick = zurück');
         },
         ready(u) {
           u.over.addEventListener('wheel', (e) => {
@@ -132,10 +131,8 @@
 
             // History: cursor-zentrierter Zoom. frozenFrom/To muessen mit-
             // wandern, sonst zieht unsere range()-Funktion den setScale
-            // sofort wieder auf den alten Range zurueck. Alle drei Charts
-            // werden synchron gezoomt — gleiche x-Achse, alles andere
-            // wirkt unstimmig. Fallback auf Chart-Mitte falls der Cursor
-            // noch nie ueber dem Chart war.
+            // sofort wieder auf den alten Range zurueck. Fallback auf
+            // Chart-Mitte falls der Cursor noch nie ueber dem Chart war.
             const widthCss = u.bbox.width / window.devicePixelRatio;
             let left = u.cursor.left;
             if (left == null || left < 0) left = widthCss / 2;
@@ -148,17 +145,14 @@
             const nxMax = nxMin + nxRange;
             frozenFrom = nxMin * 1000;
             frozenTo   = nxMax * 1000;
-            chartSpeed && chartSpeed.setScale('x', { min: nxMin, max: nxMax });
-            chartPower && chartPower.setScale('x', { min: nxMin, max: nxMax });
-            chartBatt  && chartBatt.setScale('x',  { min: nxMin, max: nxMax });
+            setAllX(nxMin, nxMax);
           }, { passive: false });
 
           // ---- Drag = Pan (horizontal) ----
           // Im Live frieren wir den aktuellen Range ein (sonst pannt das
           // rolling Fenster sofort zurueck). Im History verschieben wir
-          // frozenFrom/To. Alle drei Charts werden synchron mitgezogen, damit
-          // x-Achsen aligned bleiben. mouseup/move auf window, damit der
-          // Drag nicht abreisst sobald die Maus den Chart verlaesst.
+          // frozenFrom/To. mouseup/move auf window, damit der Drag nicht
+          // abreisst sobald die Maus den Chart verlaesst.
           let panActive = false;
           let panStartX = 0;
           let panStartMin = 0;
@@ -172,7 +166,7 @@
                 from: (now - liveWindowSeconds) * 1000,
                 to: now * 1000,
               };
-              setRangeStatus('Live · pausiert · Doppelklick = Reset');
+              setRangeStatus('Live · pausiert · Doppelklick = zurück');
             }
             panActive = true;
             panStartX = e.clientX;
@@ -188,9 +182,7 @@
             const valPerPx = (panStartMax - panStartMin) / panCssWidth;
             const newMin = panStartMin - dxPx * valPerPx;
             const newMax = panStartMax - dxPx * valPerPx;
-            chartSpeed && chartSpeed.setScale('x', { min: newMin, max: newMax });
-            chartPower && chartPower.setScale('x', { min: newMin, max: newMax });
-            chartBatt  && chartBatt.setScale('x',  { min: newMin, max: newMax });
+            setAllX(newMin, newMax);
             if (isLive()) {
               liveDragFrozen = { from: newMin * 1000, to: newMax * 1000 };
             } else {
@@ -206,11 +198,18 @@
           window.addEventListener('mousemove', onMove);
           window.addEventListener('mouseup', onUp);
 
-          // Doppelklick im Live-Modus:
-          //  - eingefroren (Drag-Zoom) → erst Auftauen
-          //  - sonst Fenster auf Default (5 min) zurück
+          // Doppelklick:
+          //  - Live eingefroren (Drag) → auftauen + Fenster auf Default
+          //  - Live gezoomt → Fenster auf Default (5 min)
+          //  - Zeitraum-Ansicht → zurück auf das geladene Fenster
           u.over.addEventListener('dblclick', () => {
-            if (!isLive()) return;
+            if (!isLive()) {
+              if (rangeFrom == null || rangeTo == null) return;
+              frozenFrom = rangeFrom;
+              frozenTo = rangeTo;
+              setAllX(rangeFrom / 1000, rangeTo / 1000);
+              return;
+            }
             if (liveDragFrozen) {
               liveDragFrozen = null;
               liveWindowSeconds = DEFAULT_LIVE_WINDOW_S;
@@ -230,23 +229,21 @@
   // und aktualisiert die Range-Status-Zeile.
   function syncLiveWindow() {
     const now = Date.now() / 1000;
-    const span = { min: now - liveWindowSeconds, max: now };
-    chartSpeed && chartSpeed.setScale('x', span);
-    chartPower && chartPower.setScale('x', span);
-    chartBatt  && chartBatt.setScale('x',  span);
+    setAllX(now - liveWindowSeconds, now);
     if (isLive()) {
       const label = liveWindowSeconds === DEFAULT_LIVE_WINDOW_S
-        ? 'Live'
-        : `Live · ${liveWindowSeconds < 60 ? liveWindowSeconds.toFixed(0) + 's' : (liveWindowSeconds/60).toFixed(1) + ' min'} · Dblclick = Reset`;
+        ? 'Live · Mausrad = Zoom · Ziehen = Pause'
+        : `Live · ${liveWindowSeconds < 60 ? liveWindowSeconds.toFixed(0) + ' s' : num(liveWindowSeconds / 60, 1) + ' min'} · Doppelklick = zurück`;
       setRangeStatus(label);
     }
   }
 
-  function makeChart(host, label, color, unit, digits, opts2 = {}) {
+  function makeChart(host, label, colorKey, unit, digits, opts2 = {}) {
     const opts = {
       width: host.clientWidth || 600,
       height: chartHeight(),
-      plugins: [wheelZoomPlugin({ factor: 0.85 })],
+      plugins: [wheelZoomPlugin({ factor: 0.85 }), UI.tooltipPlugin()],
+      padding: [10, 18, 0, 0],
       scales: {
         x: {
           time: true,
@@ -269,51 +266,90 @@
         // Caller kann y-Achse fix-pinnen (z.B. Akku auf 0..100).
         ...(opts2.yRange ? { y: { range: opts2.yRange } } : {}),
       },
-      // Legende EIN — zeigt beim Hover Zeit + aktuellen Wert an.
-      // isolate:true heißt: Klick auf eine Serie blendet andere aus (für uns
-      // egal, wir haben nur eine). live:true heißt: Werte unter dem Cursor
-      // werden in der Legende angezeigt.
-      legend: { show: true, live: true },
+      // Statt der Legende unter dem Chart zeigt ein schwebender Tooltip
+      // (UI.tooltipPlugin) Zeit + Wert unter dem Cursor.
+      legend: { show: false },
       // Cursor-Drag deaktiviert — wir handhaben mousedown/move/up selbst, um
       // Pan (links/rechts) statt Zoom-Box zu liefern. Zoom rein/raus laeuft
       // ueber das Mausrad, Reset via Doppelklick.
-      cursor: { drag: { x: false, y: false } },
+      cursor: { drag: { x: false, y: false }, points: { size: 9 } },
       axes: [
-        { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' }, values: EU_AXIS_VALUES },
-        { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' } }
+        UI.axisOpts({ values: UI.EU_AXIS_VALUES, space: () => (window.innerWidth < 640 ? 46 : 70) }),
+        UI.axisOpts({ size: 46, space: 32, values: UI.yValues(opts2.ySuffix || '') }),
       ],
       series: [
-        { label: 'Zeit', value: cursorValue },
+        { label: 'Zeit', value: (_u, v) => UI.timeLabel(v) },
         {
-          label,
-          stroke: color,
+          label: opts2.seriesLabel || label,
+          stroke: UI.seriesStroke(colorKey),
           width: 2,
-          fill: color + '22',
+          fill: UI.areaFill(colorKey),
           spanGaps: true,
-          // Formatter für den Hover-Wert in der Legende.
-          value: (_self, v) => v == null ? '--' : `${v.toFixed(digits)} ${unit}`,
+          points: { show: false },
+          // Formatter für den Hover-Wert im Tooltip.
+          value: (_self, v) => v == null ? UI.DASH : `${num(v, digits)} ${unit}`,
         }
       ]
     };
     return new uPlot(opts, [[], []], host);
   }
 
-  const chartSpeed = makeChart($('chart-speed'), 'km/h', '#4DD0E1', 'km/h', 1);
-  const chartPower = makeChart($('chart-power'), 'W',    '#E91E63', 'W',    0);
+  const chartSpeed = makeChart($('chart-speed'), 'Tempo', 'teal', 'km/h', 1);
+  const chartPower = makeChart($('chart-power'), 'Leistung', 'magenta', 'W', 0);
   // Akku-Chart mit fixer 0..100%-y-Achse, sonst zappelt der Verlauf
   // visuell wenn der Roller von 85→84 fällt.
-  const chartBatt  = makeChart($('chart-batt'),  '%',    '#FFB300', '%',    0,
-                               { yRange: [0, 100] });
+  const chartBatt  = makeChart($('chart-batt'), 'Akku', 'amber', '%', 0,
+                               { yRange: [0, 100], ySuffix: ' %' });
 
-  // Resize charts on viewport change so the cards stay tidy.
+  // Resize charts on viewport/Layout change so the cards stay tidy.
   function resizeCharts() {
     const h = chartHeight();
-    chartSpeed.setSize({ width: $('chart-speed').clientWidth, height: h });
-    chartPower.setSize({ width: $('chart-power').clientWidth, height: h });
-    chartBatt.setSize({  width: $('chart-batt').clientWidth,  height: h });
+    [[chartSpeed, 'chart-speed'], [chartPower, 'chart-power'], [chartBatt, 'chart-batt']]
+      .forEach(([u, id]) => {
+        const w = $(id).clientWidth;
+        if (w > 0 && (w !== u.width || h !== u.height)) u.setSize({ width: w, height: h });
+      });
   }
-  window.addEventListener('resize', resizeCharts);
+  window.addEventListener('resize', () => { resizeCharts(); renderSparks(); });
   window.addEventListener('orientationchange', resizeCharts);
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(() => resizeCharts());
+    ['chart-speed', 'chart-power', 'chart-batt'].forEach(id => ro.observe($(id)));
+  }
+  UI.onThemeChange(() => allCharts().forEach(u => u.redraw()));
+  UI.whenFontsReady(() => allCharts().forEach(u => u.redraw(false, true)));
+
+  // ---------- Sparklines (Akku/Leistung, letzte 5 min aus dem Live-Puffer) ----------
+  // Nur auf breiten Screens sichtbar (dort haben die Karten Platz); versteckte
+  // SVGs werden übersprungen.
+  function renderSpark(id, values, { includeZero = false, minSpan = 1 } = {}) {
+    const svg = $(id);
+    if (!svg || svg.getClientRects().length === 0) return;
+    const line = svg.querySelector('.spark-line');
+    const area = svg.querySelector('.spark-area');
+    const pts = [];
+    for (let i = 0; i < buf.ts.length; i++) {
+      const v = values[i];
+      if (isNum(v)) pts.push([buf.ts[i], Number(v)]);
+    }
+    if (pts.length < 2) { line.setAttribute('d', ''); area.setAttribute('d', ''); return; }
+    let lo = Infinity, hi = -Infinity;
+    pts.forEach(([, v]) => { if (v < lo) lo = v; if (v > hi) hi = v; });
+    if (includeZero) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+    if (hi - lo < minSpan) { const mid = (hi + lo) / 2; lo = mid - minSpan / 2; hi = mid + minSpan / 2; }
+    const W = 300, H = 60, PAD = 4;
+    const x0 = pts[0][0], x1 = pts[pts.length - 1][0];
+    const sx = (t) => ((t - x0) / (x1 - x0 || 1)) * W;
+    const sy = (v) => H - PAD - ((v - lo) / (hi - lo)) * (H - 2 * PAD);
+    let d = '';
+    pts.forEach(([t, v], i) => { d += `${i ? 'L' : 'M'}${sx(t).toFixed(1)} ${sy(v).toFixed(1)}`; });
+    line.setAttribute('d', d);
+    area.setAttribute('d', `${d}L${W} ${H}L0 ${H}Z`);
+  }
+  function renderSparks() {
+    renderSpark('spark-batt', buf.batt, { minSpan: 10 });
+    renderSpark('spark-power', buf.power, { includeZero: true, minSpan: 100 });
+  }
 
   function pushPoint(ts, speedKmh, powerW, batteryPercent) {
     // uPlot uses seconds for time scales.
@@ -330,13 +366,45 @@
       buf.power.shift();
       buf.batt.shift();
     }
+    renderSparks();
     // Im History-Mode den Chart NICHT mit Live-Punkten überschreiben — der
-    // User schaut sich gerade einen festen Zeitraum an, die Tiles sollen
-    // aber weiter live laufen (das passiert in applyTelemetry, nicht hier).
+    // User schaut sich gerade einen festen Zeitraum an, die Kennzahlen laufen
+    // aber weiter live (das passiert in applyTelemetry, nicht hier).
     if (isLive()) {
       chartSpeed.setData([buf.ts, buf.speed]);
       chartPower.setData([buf.ts, buf.power]);
       chartBatt.setData([buf.ts, buf.batt]);
+    }
+  }
+
+  // Beim Seitenaufruf die letzten 5 min aus der DB in den Live-Puffer holen,
+  // damit die Live-Charts nicht leer starten. Inzwischen per WS eingetroffene
+  // Punkte bleiben erhalten (Merge nach Zeitstempel).
+  async function backfillLiveBuffer() {
+    const to = Date.now();
+    const from = to - WINDOW_MS;
+    try {
+      const r = await window.EpfAuth.fetchAuthed(`/api/telemetry?from=${from}&to=${to}&max=600`);
+      if (!r.ok) return;
+      const { samples } = await r.json();
+      if (!samples || samples.length === 0) return;
+      const merged = new Map();
+      samples.forEach(s => merged.set(s.ts / 1000, [s.speedKmh, s.powerW, s.batteryPercent]));
+      buf.ts.forEach((t, i) => merged.set(t, [buf.speed[i], buf.power[i], buf.batt[i]]));
+      const cutoff = (Date.now() - WINDOW_MS) / 1000;
+      const keys = [...merged.keys()].filter(t => t >= cutoff).sort((a, b) => a - b);
+      buf.ts = keys;
+      buf.speed = keys.map(k => merged.get(k)[0] ?? null);
+      buf.power = keys.map(k => merged.get(k)[1] ?? null);
+      buf.batt  = keys.map(k => merged.get(k)[2] ?? null);
+      renderSparks();
+      if (isLive()) {
+        chartSpeed.setData([buf.ts, buf.speed]);
+        chartPower.setData([buf.ts, buf.power]);
+        chartBatt.setData([buf.ts, buf.batt]);
+      }
+    } catch (err) {
+      console.warn('[live] buffer backfill failed:', err);
     }
   }
 
@@ -346,10 +414,7 @@
     if (!host) return;
     host.innerHTML = RANGE_PRESETS.map(p => {
       const active = p.id === activeRange.id;
-      const cls = active
-        ? 'bg-[var(--color-brand-teal)] text-black'
-        : 'bg-[var(--color-surface-2)] text-[var(--color-on-surface-dim)] hover:text-white';
-      return `<button data-range="${p.id}" class="range-chip text-xs px-3 py-1 rounded-full ${cls}">${p.label}</button>`;
+      return `<button type="button" data-range="${p.id}" class="range-chip" aria-pressed="${active}">${p.label}</button>`;
     }).join('');
     host.querySelectorAll('.range-chip').forEach(btn => {
       btn.addEventListener('click', () => applyRange(btn.dataset.range));
@@ -369,6 +434,8 @@
     if (next.live) {
       frozenFrom = null;
       frozenTo = null;
+      rangeFrom = null;
+      rangeTo = null;
       liveDragFrozen = null;
       // Beim Wechsel auf Live das Zoom-Fenster auf Default zurueck —
       // sonst wirkt die alte Wheel-Position aus der vorigen Live-Session
@@ -379,8 +446,7 @@
       chartBatt.setData([buf.ts, buf.batt]);
       // x-Scale explizit auf Live-Fenster zuruecksetzen. Sonst bleibt die
       // per setScale gesetzte History-Range "user-set" und der Wheel-Zoom
-      // im Live-Mode hat keinen sichtbaren Effekt (range() wird beim setData
-      // nicht mehr getriggert nachdem setScale einmal explizit lief).
+      // im Live-Mode hat keinen sichtbaren Effekt.
       syncLiveWindow();
       return;
     }
@@ -394,8 +460,12 @@
       );
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const { samples } = await r.json();
+      // Während des Fetches auf einen anderen Zeitraum gewechselt → verwerfen.
+      if (activeRange !== next) return;
       frozenFrom = from;
       frozenTo = to;
+      rangeFrom = from;
+      rangeTo = to;
       const xs = samples.map(s => s.ts / 1000);
       const speed = samples.map(s => s.speedKmh);
       const power = samples.map(s => s.powerW);
@@ -406,21 +476,75 @@
       // x-scale explizit auf das gefetchte Fenster setzen — fungiert auch als
       // "Zoom-Reset" wenn der User vorher in einen anderen Range reingezoomt
       // hatte und jetzt einen Preset anklickt.
-      const xMin = from / 1000, xMax = to / 1000;
-      chartSpeed.setScale('x', { min: xMin, max: xMax });
-      chartPower.setScale('x', { min: xMin, max: xMax });
-      chartBatt.setScale('x',  { min: xMin, max: xMax });
-      setRangeStatus(`${samples.length} Punkte · Ziehen/Mausrad = Zoom · Dblclick = Reset`);
+      setAllX(from / 1000, to / 1000);
+      setRangeStatus(samples.length
+        ? `${num(samples.length)} Punkte · Mausrad = Zoom · Ziehen = Verschieben · Doppelklick = Reset`
+        : 'Keine Daten in diesem Zeitraum');
     } catch (err) {
       console.warn('range fetch failed:', err);
-      setRangeStatus('Fehler – siehe Console');
+      setRangeStatus('Fehler beim Laden – siehe Konsole');
     }
   }
 
   renderChips();
-  setRangeStatus('Live');
+  syncLiveWindow();
 
-  // ---------- Connection indicator ----------
+  // ---------- Tacho (SVG-Gauge) ----------
+  // 270°-Bogen: 0 km/h bei 135° (unten links), Maximum bei 405° (unten rechts).
+  // Skala startet bei 30 km/h und wächst in 10er-Schritten, falls schneller
+  // gefahren wird.
+  const GAUGE_CX = 120, GAUGE_CY = 120;
+  let gaugeMax = 30;
+
+  function renderGaugeTicks() {
+    const g = $('gauge-ticks');
+    if (!g) return;
+    const minorStep = gaugeMax <= 40 ? 1 : 2;
+    const majorStep = gaugeMax <= 40 ? 5 : 10;
+    let html = '';
+    for (let v = 0; v <= gaugeMax + 1e-9; v += minorStep) {
+      const major = Math.abs(v % majorStep) < 1e-9;
+      const a = (135 + 270 * (v / gaugeMax)) * Math.PI / 180;
+      const r1 = major ? 77 : 81;
+      const r2 = 86;
+      const x1 = GAUGE_CX + r1 * Math.cos(a), y1 = GAUGE_CY + r1 * Math.sin(a);
+      const x2 = GAUGE_CX + r2 * Math.cos(a), y2 = GAUGE_CY + r2 * Math.sin(a);
+      html += `<line class="gauge-tick${major ? ' is-major' : ''}" data-v="${v}" ` +
+              `x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"/>`;
+    }
+    g.innerHTML = html;
+    setText('gauge-max', String(gaugeMax));
+  }
+
+  let gaugeLitUpTo = -1;
+  function setGauge(speed) {
+    const v = isNum(speed) ? Math.max(0, Number(speed)) : 0;
+    if (v > gaugeMax) {
+      gaugeMax = Math.ceil(v / 10) * 10;
+      renderGaugeTicks();
+      gaugeLitUpTo = -1;
+    }
+    const pct = Math.min(1, v / gaugeMax);
+    const arc = $('gauge-value');
+    if (arc) {
+      arc.setAttribute('stroke-dashoffset', String(100 - pct * 100));
+      arc.style.opacity = pct > 0.002 ? '1' : '0';
+    }
+    const knob = $('gauge-knob');
+    if (knob) knob.style.transform = `rotate(${135 + 270 * pct}deg)`;
+    // Ticks bis zum aktuellen Wert einfärben (nur wenn sich was ändert).
+    const lit = Math.floor(v);
+    if (lit !== gaugeLitUpTo) {
+      gaugeLitUpTo = lit;
+      document.querySelectorAll('#gauge-ticks .gauge-tick').forEach(t => {
+        t.classList.toggle('is-lit', Number(t.dataset.v) <= v && v > 0);
+      });
+    }
+  }
+  renderGaugeTicks();
+  setGauge(null);
+
+  // ---------- Verbindungsstatus + Offline-Hinweis ----------
   // App schickt scooterName = vom User vergebener Anzeigename (oder null wenn
   // nichts konfiguriert). Alte Builds schickten die MAC mit — die filtern wir
   // raus, damit "AA:BB:CC:..." nicht ans UI durchschlaegt.
@@ -429,35 +553,190 @@
     if (!name || MAC_RE.test(name)) return 'E-Scooter';
     return name;
   }
+
+  let stateKnown = false;
+  let scooterConnected = false;
+  let scooterLabel = 'E-Scooter';
+  let wsOpen = false;
+  let wsEverClosed = false;
+  let wsRetryAt = 0;
+  let lastTelemetryTs = null;       // ts aus dem letzten Frame (Scooter-Zeit)
+  let lastTelemetryReceived = 0;    // Empfangszeit (Browser-Uhr), 0 = Snapshot
+
+  const lastSeenFmt = new Intl.DateTimeFormat('de-DE', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  const timeOnlyFmt = new Intl.DateTimeFormat('de-DE', {
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+
   function applyState(state) {
-    const dot = $('conn-dot');
-    const text = $('conn-text');
-    if (state && state.connected) {
-      dot.className = 'inline-block w-2.5 h-2.5 rounded-full bg-green-500';
-      dot.title = 'Scooter verbunden';
-      text.textContent = displayName(state.scooterName) + ' verbunden';
-    } else {
-      dot.className = 'inline-block w-2.5 h-2.5 rounded-full bg-gray-500';
-      dot.title = 'Kein Scooter';
-      text.textContent = 'Kein Scooter';
-    }
-    setText('chip-scooter',
-      state && state.connected
-        ? displayName(state.scooterName) + ': verbunden'
-        : 'Scooter: --');
+    stateKnown = true;
+    scooterConnected = !!(state && state.connected);
+    scooterLabel = displayName(state && state.scooterName);
+    updateConnectionUi();
+    updateLiveBadge();
   }
 
+  function updateConnectionUi() {
+    const pill = $('conn-pill');
+    const text = $('conn-text');
+    let tone, label, title;
+    if (wsEverClosed && !wsOpen) {
+      tone = 'danger'; label = 'Server getrennt'; title = 'Keine Verbindung zum Server';
+    } else if (scooterConnected) {
+      tone = 'ok'; label = `${scooterLabel} verbunden`; title = 'Scooter verbunden';
+    } else {
+      tone = 'muted'; label = 'Kein Scooter'; title = 'Kein Scooter verbunden';
+    }
+    if (pill) { pill.dataset.tone = tone; pill.title = title; }
+    if (text) text.textContent = label;
+
+    setPill('chip-scooter',
+      scooterConnected ? 'ok' : 'muted',
+      scooterConnected ? scooterLabel : 'Nicht verbunden',
+      scooterConnected ? 'Scooter verbunden' : 'Kein Scooter verbunden');
+
+    updateBanner();
+  }
+
+  function updateBanner() {
+    const banner = $('offline-banner');
+    if (!banner) return;
+    let kind = null;
+    if (wsEverClosed && !wsOpen) kind = 'server';
+    else if (stateKnown && !scooterConnected) kind = 'scooter';
+
+    document.body.classList.toggle('is-offline', kind != null);
+    if (!kind) { banner.hidden = true; return; }
+
+    banner.hidden = false;
+    banner.dataset.kind = kind;
+    $('offline-icon-scooter').classList.toggle('hidden', kind !== 'scooter');
+    $('offline-icon-server').classList.toggle('hidden', kind !== 'server');
+    if (kind === 'server') {
+      const s = Math.max(0, Math.ceil((wsRetryAt - Date.now()) / 1000));
+      setText('offline-title', 'Verbindung zum Server unterbrochen');
+      setText('offline-text', s > 0 ? `Neuer Versuch in ${s} s …` : 'Verbinde neu …');
+    } else {
+      setText('offline-title', 'Kein Scooter verbunden');
+      setText('offline-text', lastTelemetryTs
+        ? `Letzte Daten vom ${lastSeenFmt.format(new Date(lastTelemetryTs))} Uhr. Sobald die App wieder verbunden ist, laufen die Werte live weiter.`
+        : 'Sobald die EPF-Cockpit-App mit dem Scooter verbunden ist, erscheinen hier die Live-Werte.');
+    }
+  }
+
+  // Live-Badge im Tacho: "Live" solange Frames frisch reinkommen.
+  function updateLiveBadge() {
+    const badge = $('live-badge');
+    if (!badge) return;
+    const fresh = scooterConnected && lastTelemetryReceived > 0 && Date.now() - lastTelemetryReceived < 5000;
+    badge.dataset.state = fresh ? 'live' : 'idle';
+    setText('live-badge-text', fresh
+      ? 'Live'
+      : lastTelemetryTs ? `Stand ${timeOnlyFmt.format(new Date(lastTelemetryTs))}` : 'Keine Daten');
+  }
+  setInterval(() => {
+    updateLiveBadge();
+    if (wsEverClosed && !wsOpen) updateBanner();
+  }, 1000);
+
   // ---------- Telemetry → DOM ----------
-  function applyTelemetry(t) {
-    setText('t-speed', fmt(t.speedKmh, 1));
-    setText('t-batt',  fmt(t.batteryPercent, 0));
-    setText('t-power', fmt(t.powerW, 0));
-    setText('t-volt',  fmt(t.voltageV, 1));
-    setText('t-amp',   fmt(t.currentA, 1));
-    setText('t-temp',  fmt(t.controllerTempC, 0));
-    setText('chip-parking',  'Parking: '  + (t.parking ? 'an' : 'aus'));
-    setText('chip-ridemode', 'Modus: '    + (t.rideModeStand ? 'Stand' : 'Kick'));
-    pushPoint(t.ts || Date.now(), t.speedKmh, t.powerW, t.batteryPercent);
+  const POWER_SCALE_MIN = 500; // W — Balken-Skala, wächst mit der Spitze
+  // Spitze = größter Betrag im 5-min-Live-Puffer (inkl. DB-Backfill).
+  function bufferPeakPower() {
+    let peak = 0;
+    for (const v of buf.power) if (isNum(v)) peak = Math.max(peak, Math.abs(Number(v)));
+    return peak;
+  }
+
+  function applyTelemetry(t, { snapshot = false } = {}) {
+    const ts = isNum(t.ts) ? Number(t.ts) : Date.now();
+    lastTelemetryTs = ts;
+    // Frames, deren Zeitstempel weit in der Vergangenheit liegen (Snapshot
+    // beim Verbindungsaufbau), zählen nicht als "live".
+    if (!snapshot && Math.abs(Date.now() - ts) < 120_000) lastTelemetryReceived = Date.now();
+
+    // Tacho + Kennzahlen (weich animiert, respektiert prefers-reduced-motion)
+    UI.animateNumber($('t-speed'), t.speedKmh, 1);
+    setGauge(t.speedKmh);
+    UI.animateNumber($('t-batt'),  t.batteryPercent, 0);
+    UI.animateNumber($('t-power'), t.powerW, 0);
+    setText('t-volt', num(t.voltageV, 1));
+    setText('t-amp',  num(t.currentA, 1));
+    setText('t-temp', num(t.controllerTempC, 0));
+
+    // Motor-Temperatur: nur anzeigen, wenn die App sie mitschickt.
+    const hasMotor = isNum(t.motorTempC);
+    const motorWrap = $('motor-temp-wrap');
+    if (motorWrap) motorWrap.hidden = !hasMotor;
+    if (hasMotor) setText('t-motor-temp', num(t.motorTempC, 0));
+
+    // Kilometerzähler (tripKm = Tageskilometer, totalKm = Gesamt)
+    setText('t-trip-km',  num(t.tripKm, 2));
+    setText('t-total-km', num(t.totalKm, 1));
+
+    // Akku-Balken (10 Segmente) + Zustand
+    const battCard = $('metric-batt');
+    if (isNum(t.batteryPercent)) {
+      const b = Math.max(0, Math.min(100, Number(t.batteryPercent)));
+      $('batt-bar').style.width = `${b}%`;
+      if (battCard) battCard.dataset.level = b <= 20 ? 'low' : 'ok';
+      setText('batt-caption', b <= 10 ? 'Kritisch – bitte laden' : b <= 20 ? 'Niedrig' : b <= 50 ? 'Mittel' : 'Gut');
+    } else {
+      $('batt-bar').style.width = '0%';
+      if (battCard) battCard.dataset.level = 'ok';
+      setText('batt-caption', ' ');
+    }
+
+    // Punkt zuerst in den Puffer, damit Spitze/Sparklines ihn schon kennen.
+    pushPoint(ts, t.speedKmh, t.powerW, t.batteryPercent);
+
+    // Leistungs-Balken relativ zur Spitze der letzten 5 min (min. 500 W)
+    if (isNum(t.powerW)) {
+      const p = Number(t.powerW);
+      const peak = Math.max(bufferPeakPower(), Math.abs(p));
+      const scale = Math.max(POWER_SCALE_MIN, peak);
+      $('power-bar').style.width = `${Math.min(100, Math.abs(p) / scale * 100)}%`;
+      $('power-bar-wrap').dataset.regen = p < 0 ? '1' : '0';
+      setText('power-caption', p < 0 ? 'Rekuperation' : `Spitze 5 min: ${num(peak, 0)} W`);
+    } else {
+      $('power-bar').style.width = '0%';
+      setText('power-caption', ' ');
+    }
+
+    // Status-Pills. Neuer Vertrag: parking ist der verlässliche Park-Zustand;
+    // rideModeStand true = Stand-Stop, false = Kick-Start, null/undefined
+    // (ältere App-Versionen) = unbekannt — NICHT als "Kick" anzeigen.
+    if (t.parking === true) {
+      setPill('chip-parking', 'warn', 'Geparkt', 'Parkmodus aktiv');
+    } else if (t.parking === false) {
+      setPill('chip-parking', 'info', 'Fahrbereit', 'Parkmodus aus');
+    } else {
+      setPill('chip-parking', 'muted', 'Parken: –', 'Park-Zustand unbekannt');
+    }
+
+    if (t.rideModeStand === true) {
+      setPill('chip-ridemode', 'neutral', 'Stand-Stop', 'Fahrmodus: Stand-Stop');
+    } else if (t.rideModeStand === false) {
+      setPill('chip-ridemode', 'neutral', 'Kick-Start', 'Fahrmodus: Kick-Start');
+    } else {
+      setPill('chip-ridemode', 'muted', 'Modus: –', 'Fahrmodus unbekannt');
+    }
+
+    const light = $('chip-light');
+    if (light) {
+      if (t.lightOn === true || t.lightOn === false) {
+        light.hidden = false;
+        setPill('chip-light', t.lightOn ? 'warn' : 'muted', t.lightOn ? 'Licht an' : 'Licht aus', 'Frontlicht');
+      } else {
+        light.hidden = true;
+      }
+    }
+
+    updateLiveBadge();
+    if (!scooterConnected) updateBanner();
   }
 
   // ---------- Live-Map (Leaflet, OSM) ----------
@@ -465,8 +744,7 @@
   // Trail = letzte N Punkte der aktuellen Fahrt; wechselt der tripId, wird
   // der Trail gepurged damit nicht zwei Fahrten zusammenkleben.
   // Trail-Cap nur als Notbremse — eine ueberlange Polyline killt sonst die
-  // Map. Bei 1s-Intervall reichen 20k Punkte fuer ~5.5h Fahrt. Trip-History
-  // ueber dem Cap wird unten beim Backfill auf TRAIL_MAX_POINTS getrimmt.
+  // Map. Bei 1s-Intervall reichen 20k Punkte fuer ~5.5h Fahrt.
   const TRAIL_MAX_POINTS = 20_000;
   // Smart auto-refocus: pausiert nach User-Interaktion, kommt nach IDLE_MS
   // Stille zurück. Ausserdem direkt wieder an, sobald der Marker ausserhalb
@@ -481,21 +759,33 @@
   let liveAutoFollowTimer = null;
   let liveZoomSlider = null;
 
+  function updateFollowUi() {
+    const btn = $('live-map-follow');
+    if (!btn) return;
+    btn.dataset.follow = liveAutoFollow ? '1' : '0';
+    setText('live-map-follow-text', liveAutoFollow ? 'Folgt' : 'Zentrieren');
+  }
+  function setAutoFollow(on) {
+    liveAutoFollow = on;
+    clearTimeout(liveAutoFollowTimer);
+    updateFollowUi();
+  }
   function pauseAutoFollow() {
     liveAutoFollow = false;
     clearTimeout(liveAutoFollowTimer);
-    liveAutoFollowTimer = setTimeout(() => { liveAutoFollow = true; }, AUTO_FOLLOW_IDLE_MS);
+    liveAutoFollowTimer = setTimeout(() => setAutoFollow(true), AUTO_FOLLOW_IDLE_MS);
+    updateFollowUi();
   }
 
   function initLiveMap() {
     if (liveMap || typeof L === 'undefined') return;
-    const section = document.getElementById('live-map-section');
-    const host = document.getElementById('live-map');
+    const section = $('live-map-section');
+    const host = $('live-map');
     if (!section || !host) return;
     L.Icon.Default.imagePath = '/vendor/leaflet/images/';
     section.classList.remove('hidden');
     liveMap = L.map(host, {
-      // Default +/- weg — wir bauen eigenen Slider als Overlay.
+      // Default +/- weg — wir haben einen eigenen Slider als Overlay.
       zoomControl: false,
       attributionControl: true,
       scrollWheelZoom: true,
@@ -503,9 +793,11 @@
 
     // Tile-Layer-Set (alle frei, kein API-Key). Satellit default — der User
     // erkennt seine Strecke darin deutlich besser als auf flacher Strasse.
+    // "Straße" wird im dunklen Theme per CSS-Filter abgedunkelt (.tiles-themed).
     const layers = {
       osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
+        className: 'tiles-themed',
         attribution: '© OpenStreetMap contributors',
       }),
       sat: L.tileLayer(
@@ -523,9 +815,8 @@
     let activeLayerKey = 'sat';
     layers.sat.addTo(liveMap);
 
-    // Custom Layer-Switcher (HTML in dashboard.html). Default Leaflet-Control
-    // ist visuell zu fremd — wir nutzen unser eigenes Brand-Dark-Theme.
-    const switcherHost = document.getElementById('live-map-layers');
+    // Custom Layer-Switcher (HTML in dashboard.html).
+    const switcherHost = $('live-map-layers');
     function setActiveLayer(key) {
       if (!layers[key] || key === activeLayerKey) return;
       liveMap.removeLayer(layers[activeLayerKey]);
@@ -533,29 +824,30 @@
       activeLayerKey = key;
       switcherHost?.querySelectorAll('.map-layer-btn').forEach(b => {
         b.classList.toggle('is-active', b.dataset.layer === key);
+        b.setAttribute('aria-pressed', String(b.dataset.layer === key));
       });
     }
     if (switcherHost) {
       switcherHost.querySelectorAll('.map-layer-btn').forEach(btn => {
+        btn.setAttribute('aria-pressed', String(btn.dataset.layer === activeLayerKey));
         btn.addEventListener('click', () => setActiveLayer(btn.dataset.layer));
       });
-      // Default markieren
       switcherHost.querySelector(`.map-layer-btn[data-layer="${activeLayerKey}"]`)
         ?.classList.add('is-active');
     }
 
-    liveTrail = L.polyline([], { color: '#4DD0E1', weight: 4, opacity: 0.85 }).addTo(liveMap);
+    liveTrail = L.polyline([], {
+      color: '#4DD0E1', weight: 4, opacity: 0.95,
+      lineJoin: 'round', lineCap: 'round', className: 'live-trail',
+    }).addTo(liveMap);
 
-    // Zoom-Slider-Overlay (vertikal, links oben, weil topright von der
-    // Layer-Control belegt ist).
-    liveZoomSlider = document.getElementById('live-map-zoom');
+    // Zoom-Slider-Overlay (vertikal, links oben).
+    liveZoomSlider = $('live-map-zoom');
     if (liveZoomSlider) {
       liveZoomSlider.min = liveMap.getMinZoom();
       liveZoomSlider.max = liveMap.getMaxZoom();
       liveZoomSlider.value = liveMap.getZoom();
       liveZoomSlider.addEventListener('input', () => {
-        // setZoom triggert zoomend → wir würden uns selbst overriden;
-        // pauseAutoFollow um zu signalisieren dass das eine Geste war.
         liveMap.setZoom(Number(liveZoomSlider.value));
         pauseAutoFollow();
       });
@@ -566,12 +858,14 @@
 
     // User-Interaktion pausiert auto-follow (10s IDLE-Timer in pauseAutoFollow).
     liveMap.on('dragstart zoomstart', pauseAutoFollow);
-    // Doppelklick = expliziter Reset (auto-follow sofort wieder an).
-    liveMap.on('dblclick', () => {
-      liveAutoFollow = true;
-      clearTimeout(liveAutoFollowTimer);
+    // Doppelklick / Folgen-Button = expliziter Reset (auto-follow sofort an).
+    const recenter = () => {
+      setAutoFollow(true);
       if (liveMarker) liveMap.panTo(liveMarker.getLatLng());
-    });
+    };
+    liveMap.on('dblclick', recenter);
+    $('live-map-follow')?.addEventListener('click', recenter);
+    updateFollowUi();
   }
 
   // Holt die kompletten Waypoints eines Trips vom Server und prependet sie in
@@ -586,8 +880,7 @@
       if (!r.ok) return;
       const { points } = await r.json();
       if (!points || points.length === 0) return;
-      // Trip koennte sich zwischenzeitlich geaendert haben (User hat eine
-      // neue Fahrt gestartet waehrend wir noch fetchten) — ignorieren.
+      // Trip koennte sich zwischenzeitlich geaendert haben — ignorieren.
       if (tripId !== liveTripId) return;
       const histPts = points.map(p => [p.lat, p.lon]);
       // Backfill vorne, Live-Punkte (waehrend des Fetches reingekommen) hinten.
@@ -602,16 +895,14 @@
   }
 
   // Billige Distanz-Naeherung in Meter — Haversine ist Overkill fuer die
-  // kurzen Distanzen zwischen aufeinanderfolgenden GPS-Samples. lat ist
-  // 111km/Grad, lon je nach Breitengrad weniger.
+  // kurzen Distanzen zwischen aufeinanderfolgenden GPS-Samples.
   function distMeters(a, b) {
     const dLat = (b[0] - a[0]) * 111_000;
     const dLon = (b[1] - a[1]) * 111_000 * Math.cos(a[0] * Math.PI / 180);
     return Math.hypot(dLat, dLon);
   }
   // Im Idle nur Punkte mit > 3m Bewegung anhaengen — sonst zappelt der Trail
-  // wegen GPS-Jitter im Stand. Bei aktivem Trip wird gar nicht gefiltert,
-  // damit kurze Stop-and-Go-Phasen auch sichtbar bleiben.
+  // wegen GPS-Jitter im Stand. Bei aktivem Trip wird gar nicht gefiltert.
   const IDLE_MIN_MOVE_M = 3;
 
   function applyLocation(msg) {
@@ -645,30 +936,36 @@
     }
 
     if (!liveMarker) {
-      liveMarker = L.circleMarker(ll, {
-        radius: 8, color: '#0e1116', weight: 2,
-        fillColor: '#4DD0E1', fillOpacity: 1,
+      liveMarker = L.marker(ll, {
+        icon: L.divIcon({
+          className: '',
+          html: '<div class="live-dot"></div>',
+          iconSize: [18, 18],
+          iconAnchor: [9, 9],
+        }),
+        keyboard: false,
+        interactive: false,
       }).addTo(liveMap);
-      // Erste Position: aggressiv zoomen damit User was sieht.
+      // Erste Position: aggressiv zoomen damit User was sieht. Das zoomstart
+      // dabei ist keine User-Geste → Auto-Follow direkt wieder an.
       liveMap.setView(ll, 17);
+      setAutoFollow(true);
     } else {
       liveMarker.setLatLng(ll);
-      // Smart: wenn Marker ausserhalb sichtbar ist während auto-follow off
-      // — User-View ist eh unbrauchbar, also direkt zurückspringen + auto
-      // wieder an.
+      // Marker ausserhalb des sichtbaren Bereichs während auto-follow off
+      // — User-View ist eh unbrauchbar, also zurückspringen + auto wieder an.
       if (!liveAutoFollow && !liveMap.getBounds().pad(-0.05).contains(ll)) {
-        liveAutoFollow = true;
-        clearTimeout(liveAutoFollowTimer);
+        setAutoFollow(true);
       }
       if (liveAutoFollow) liveMap.panTo(ll, { animate: true, duration: 0.5 });
     }
 
-    const meta = document.getElementById('live-map-meta');
+    const meta = $('live-map-meta');
     if (meta) {
-      const acc = msg.accuracyM != null ? ` · ±${msg.accuracyM.toFixed(0)}m` : '';
+      const acc = isNum(msg.accuracyM) ? ` · ±${num(msg.accuracyM, 0)} m` : '';
       const status = liveTripId
-        ? `${liveTrailPts.length} Pkt`
-        : (liveTrailPts.length > 0 ? `${liveTrailPts.length} Pkt · Idle` : 'Idle');
+        ? `Fahrt · ${num(liveTrailPts.length)} Punkte`
+        : (liveTrailPts.length > 0 ? `${num(liveTrailPts.length)} Punkte · Idle` : 'Idle');
       meta.textContent = `${status}${acc}`;
     }
   }
@@ -683,6 +980,8 @@
 
     ws.addEventListener('open', () => {
       backoff = 500;
+      wsOpen = true;
+      updateConnectionUi();
       console.log('[live] connected');
     });
 
@@ -700,6 +999,10 @@
 
     ws.addEventListener('close', () => {
       console.warn(`[live] disconnected, retry in ${backoff}ms`);
+      wsOpen = false;
+      wsEverClosed = true;
+      wsRetryAt = Date.now() + backoff;
+      updateConnectionUi();
       setTimeout(connect, backoff);
       backoff = Math.min(backoff * 2, MAX_BACKOFF);
     });
@@ -713,8 +1016,9 @@
   // Initial snapshot fetch so the page isn't blank before the first WS frame.
   window.EpfAuth.fetchAuthed('/api/state').then(r => r.json()).then(snap => {
     if (snap.state)     applyState(snap.state);
-    if (snap.telemetry) applyTelemetry(snap.telemetry);
+    if (snap.telemetry) applyTelemetry(snap.telemetry, { snapshot: true });
   }).catch(() => { /* server might still be starting */ });
 
+  backfillLiveBuffer();
   connect();
 })();

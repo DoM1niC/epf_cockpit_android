@@ -8,18 +8,45 @@ html, body {
   padding: 0;
 }
 
+/* Textfarben über Variablen, damit ?theme=light wirklich greift
+   (obs.js setzt dann .obs-light auf <body>). */
+.obs {
+  --obs-fg: #ffffff;
+  --obs-dim: rgba(255, 255, 255, 0.78);
+  --obs-shadow-1: rgba(0, 0, 0, 0.85);
+  --obs-shadow-2: rgba(0, 0, 0, 0.65);
+}
+.obs.obs-light {
+  --obs-fg: #0e1116;
+  --obs-dim: rgba(14, 17, 22, 0.72);
+  --obs-shadow-1: rgba(255, 255, 255, 0.9);
+  --obs-shadow-2: rgba(255, 255, 255, 0.6);
+}
+.obs-fg  { color: var(--obs-fg); }
+.obs-dim { color: var(--obs-dim); }
+
+/* Ziffern gleich breit → die Anzeige springt nicht, wenn 9 → 10 km/h. */
+.obs-num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+.obs-unit {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 /* Text drop-shadow so it stays readable over bright backgrounds.
    Wird auch auf SVG-Icons im Overlay angewendet, damit sie auf hellen
    Game-Captures (Snow-Maps, Daylight-Streams) nicht verschwinden. */
 .obs-shadow {
   text-shadow:
-    0 0 6px rgba(0, 0, 0, 0.85),
-    0 2px 4px rgba(0, 0, 0, 0.65);
+    0 0 6px var(--obs-shadow-1, rgba(0, 0, 0, 0.85)),
+    0 2px 4px var(--obs-shadow-2, rgba(0, 0, 0, 0.65));
 }
 .obs-shadow svg {
   filter:
-    drop-shadow(0 0 4px rgba(0, 0, 0, 0.85))
-    drop-shadow(0 2px 3px rgba(0, 0, 0, 0.65));
+    drop-shadow(0 0 4px var(--obs-shadow-1, rgba(0, 0, 0, 0.85)))
+    drop-shadow(0 2px 3px var(--obs-shadow-2, rgba(0, 0, 0, 0.65)));
 }
 
 /* Accent presets selected via ?accent=... query param */

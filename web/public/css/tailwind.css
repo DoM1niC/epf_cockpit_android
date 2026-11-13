@@ -1,73 +1,947 @@
-/* Tailwind v4 CSS-first config. No tailwind.config.js needed. */
+/* Tailwind v4 CSS-first config. No tailwind.config.js needed.
+ *
+ * Aufbau:
+ *   1. @theme-Tokens (Brand-Farben, Flächen, Schrift)
+ *   2. Semantische Tokens dunkel (Default) / hell (data-theme="light")
+ *   3. Komponenten (Header, Cards, Pills, Gauge, Charts, Karten, Verlauf)
+ *
+ * Das Theme wird von public/js/ui.js als data-theme auf <html> gesetzt
+ * (Dunkel ist Default, Hell und "Auto" = prefers-color-scheme per Toggle).
+ * Alle Seiten-Styles hängen an body.app — das OBS-Overlay hat diese Klasse
+ * nicht und bleibt dadurch komplett transparent. */
 @import "tailwindcss";
 
-@theme {
+/* Inter Variable (opsz + wght), self-hosted via scripts/copy-vendor.js. */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(/vendor/inter/inter-latin-opsz-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(/vendor/inter/inter-latin-ext-opsz-normal.woff2) format('woff2');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+
+@theme static {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
   /* Brand colors — match the Android Material 3 palette */
   --color-brand-teal: #4DD0E1;
   --color-brand-amber: #FFB300;
   --color-brand-magenta: #E91E63;
 
-  /* Dark surface tones (used as default in dashboard.html) */
-  --color-surface-0: #0e1116;
-  --color-surface-1: #161a21;
-  --color-surface-2: #1f242d;
-  --color-surface-3: #2a2f3a;
-  --color-on-surface: #e6e8ee;
-  --color-on-surface-dim: #9aa3b2;
+  /* Flächen (dunkel, Default). Hell wird unten über data-theme überschrieben. */
+  --color-surface-0: #07090d;
+  --color-surface-1: #10141b;
+  --color-surface-2: #171c25;
+  --color-surface-3: #232a36;
+  --color-on-surface: #e8ebf2;
+  --color-on-surface-dim: #8e98aa;
 }
 
-/* Subtle scrollbars to match the dark surface */
-@media (prefers-color-scheme: dark) {
-  html { color-scheme: dark; }
+/* ------------------------------------------------------------------ */
+/* Semantische Tokens                                                  */
+/* ------------------------------------------------------------------ */
+:root {
+  --fg: var(--color-on-surface);
+  --fg-dim: var(--color-on-surface-dim);
+  --fg-faint: #5d6678;
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.14);
+  --card-bg: linear-gradient(180deg, rgba(25, 31, 41, 0.78) 0%, rgba(15, 19, 26, 0.78) 100%);
+  --card-solid: #11151c;
+  --card-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.05) inset, 0 24px 48px -30px rgba(0, 0, 0, 0.9);
+  --header-bg: rgba(7, 9, 13, 0.82);
+  --glass-bg: rgba(12, 15, 21, 0.78);
+  --soft-bg: rgba(255, 255, 255, 0.04);
+  --soft-bg-hover: rgba(255, 255, 255, 0.08);
+  --track: rgba(255, 255, 255, 0.07);
+
+  /* Text-Varianten der Brand-Farben (auf hellem Grund dunkler). */
+  --teal-ink: #4DD0E1;
+  --amber-ink: #FFB300;
+  --magenta-ink: #ff4d8d;
+  --ok: #34d399;
+  --ok-ink: #34d399;
+  --on-accent: #041417;
+
+  --glow-teal: rgba(77, 208, 225, 0.45);
+  --glow-amber: rgba(255, 179, 0, 0.35);
+  --glow-magenta: rgba(233, 30, 99, 0.4);
+
+  --bg-glow-1: rgba(77, 208, 225, 0.13);
+  --bg-glow-2: rgba(233, 30, 99, 0.09);
+  --bg-glow-3: rgba(255, 179, 0, 0.05);
+  --bg-grid: rgba(255, 255, 255, 0.025);
+
+  /* Charts (von ui.js per getComputedStyle gelesen) */
+  --chart-axis: #7d879a;
+  --chart-grid: rgba(255, 255, 255, 0.06);
+  --chart-teal: #4DD0E1;
+  --chart-amber: #FFB300;
+  --chart-magenta: #EC407A;
+  --chart-fill-alpha: 0.32;
+  --map-bg: #0d1117;
 }
 
-/* uPlot host containers should never overflow tile cards */
-.uplot { width: 100% !important; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
-/* uPlot-Legende ans Dark-Theme angleichen.
-   Default ist hellgrauer Text auf weißem BG und nimmt full width — passt nicht
-   ins Card-Layout. Wir gleichen die Farben an, machen den Text klein und
-   geben ihm etwas Luft nach oben. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-surface-0: #eef2f7;
+  --color-surface-1: #ffffff;
+  --color-surface-2: #f1f4f9;
+  --color-surface-3: #e2e8f0;
+  --color-on-surface: #0d1320;
+  --color-on-surface-dim: #5a6578;
+
+  --fg-faint: #8a93a3;
+  --line: rgba(15, 23, 42, 0.08);
+  --line-strong: rgba(15, 23, 42, 0.16);
+  --card-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(250, 252, 255, 0.86) 100%);
+  --card-solid: #ffffff;
+  --card-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.9) inset, 0 1px 2px rgba(15, 23, 42, 0.04), 0 18px 40px -28px rgba(15, 23, 42, 0.35);
+  --header-bg: rgba(238, 242, 247, 0.88);
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --soft-bg: rgba(15, 23, 42, 0.04);
+  --soft-bg-hover: rgba(15, 23, 42, 0.08);
+  --track: rgba(15, 23, 42, 0.08);
+
+  --teal-ink: #00838f;
+  --amber-ink: #b45309;
+  --magenta-ink: #c2185b;
+  --ok: #10b981;
+  --ok-ink: #047857;
+
+  --glow-teal: rgba(0, 172, 193, 0.35);
+  --glow-amber: rgba(255, 179, 0, 0.3);
+  --glow-magenta: rgba(233, 30, 99, 0.25);
+
+  --bg-glow-1: rgba(77, 208, 225, 0.22);
+  --bg-glow-2: rgba(233, 30, 99, 0.08);
+  --bg-glow-3: rgba(255, 179, 0, 0.1);
+  --bg-grid: rgba(15, 23, 42, 0.035);
+
+  --chart-axis: #697386;
+  --chart-grid: rgba(15, 23, 42, 0.07);
+  --chart-teal: #00acc1;
+  --chart-amber: #f59e0b;
+  --chart-magenta: #e91e63;
+  --chart-fill-alpha: 0.22;
+  --map-bg: #e5e9f0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Basis                                                               */
+/* ------------------------------------------------------------------ */
+@layer base {
+  html {
+    font-feature-settings: "cv11";
+    -webkit-tap-highlight-color: transparent;
+  }
+  body.app {
+    min-height: 100dvh;
+    background-color: var(--color-surface-0);
+    color: var(--fg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+  /* Feste Hintergrund-Ebene: weiche Farbverläufe + sehr dezentes Raster.
+     Als eigenes fixed-Element statt background-attachment:fixed, das auf
+     iOS ignoriert wird und beim Scrollen ruckelt. */
+  body.app::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(1100px 620px at 8% -12%, var(--bg-glow-1), transparent 62%),
+      radial-gradient(900px 560px at 108% 6%, var(--bg-glow-2), transparent 60%),
+      radial-gradient(900px 600px at 50% 115%, var(--bg-glow-3), transparent 60%);
+  }
+  body.app::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      linear-gradient(var(--bg-grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--bg-grid) 1px, transparent 1px);
+    background-size: 44px 44px;
+    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 75%);
+  }
+  .app ::selection { background: rgba(77, 208, 225, 0.35); }
+  .app :focus-visible {
+    outline: 2px solid var(--color-brand-teal);
+    outline-offset: 2px;
+  }
+  .app button { cursor: pointer; }
+  .tnum { font-variant-numeric: tabular-nums; }
+}
+
+/* Lucide-Style-Icons: Stroke folgt currentColor, runde Joins.
+   In Markup einsetzen mit <svg class="icon w-4 h-4">…</svg>. Liegt in
+   @layer base, damit Utilities wie `hidden` und Komponenten-Regeln
+   (z.B. Theme-Toggle) die display-Angabe überschreiben können. */
+@layer base {
+  .icon {
+    display: inline-block;
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vertical-align: -0.15em;
+  }
+}
+
+@layer components {
+  /* ---------------------------------------------------------------- */
+  /* Header + Navigation (identisch auf Live und Verlauf)              */
+  /* ---------------------------------------------------------------- */
+  .app-header {
+    position: sticky;
+    top: 0;
+    z-index: 1000; /* über Leaflet-Panes (400–700) */
+    background: var(--header-bg);
+    border-bottom: 1px solid var(--line);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    backdrop-filter: blur(18px) saturate(160%);
+  }
+  .app-header-inner {
+    max-width: 80rem;
+    margin: 0 auto;
+    height: 3.75rem;
+    padding: 0 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  @media (min-width: 640px) {
+    .app-header-inner { padding: 0 1.5rem; gap: 1.25rem; }
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.625rem;
+    color: var(--fg);
+    text-decoration: none;
+    flex-shrink: 0;
+  }
+  .brand-mark {
+    display: grid;
+    place-items: center;
+    width: 2.125rem;
+    height: 2.125rem;
+    border-radius: 0.75rem;
+    color: #031a1d;
+    background: linear-gradient(135deg, #7ae6f2 0%, var(--color-brand-teal) 45%, #1ea6b8 100%);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15) inset, 0 8px 22px -8px var(--glow-teal);
+  }
+  .brand-text {
+    display: none;
+    font-size: 0.95rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+  .brand-text span { color: var(--fg-dim); font-weight: 500; }
+  @media (min-width: 768px) {
+    .brand-text { display: inline; }
+  }
+
+  .nav-seg {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--soft-bg);
+    border: 1px solid var(--line);
+    min-width: 0;
+  }
+  .nav-seg a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--fg-dim);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: color 0.2s, background-color 0.2s;
+  }
+  .nav-seg a:hover { color: var(--fg); background: var(--soft-bg-hover); }
+  .nav-seg a[aria-current="page"] {
+    color: var(--fg);
+    background: var(--card-solid);
+    box-shadow: 0 0 0 1px var(--line-strong), 0 6px 16px -10px rgba(0, 0, 0, 0.6);
+  }
+  .nav-seg a[aria-current="page"] .icon { color: var(--teal-ink); }
+  @media (min-width: 640px) {
+    .nav-seg a { padding: 0.42rem 0.9rem; }
+  }
+
+  .header-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .icon-btn {
+    display: inline-grid;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    flex-shrink: 0;
+    border-radius: 999px;
+    color: var(--fg-dim);
+    background: var(--soft-bg);
+    border: 1px solid var(--line);
+    transition: color 0.2s, background-color 0.2s, border-color 0.2s;
+  }
+  .icon-btn:hover { color: var(--fg); background: var(--soft-bg-hover); border-color: var(--line-strong); }
+  /* Theme-Toggle zeigt das Icon des aktuellen Modus */
+  .theme-icon { display: none; }
+  :root[data-theme-mode="dark"]  .theme-icon-dark,
+  :root[data-theme-mode="light"] .theme-icon-light,
+  :root[data-theme-mode="auto"]  .theme-icon-auto { display: block; }
+
+  /* ---------------------------------------------------------------- */
+  /* Layout                                                            */
+  /* ---------------------------------------------------------------- */
+  .page {
+    max-width: 80rem;
+    margin: 0 auto;
+    padding: 1rem 1rem 3rem;
+    display: grid;
+    gap: 1rem;
+  }
+  .page-narrow { max-width: 64rem; }
+  @media (min-width: 640px) {
+    .page { padding: 1.5rem 1.5rem 4rem; gap: 1.5rem; }
+  }
+  .page > * { min-width: 0; }
+
+  .section-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.625rem 0.875rem;
+  }
+  .section-title {
+    font-size: 1.0625rem;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .status-text {
+    font-size: 0.75rem;
+    color: var(--fg-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Cards                                                             */
+  /* ---------------------------------------------------------------- */
+  .card {
+    position: relative;
+    min-width: 0;
+    border-radius: 1.25rem;
+    background: var(--card-bg);
+    border: 1px solid var(--line);
+    box-shadow: var(--card-shadow);
+    padding: 1rem;
+  }
+  @media (min-width: 640px) {
+    .card { padding: 1.25rem; border-radius: 1.375rem; }
+  }
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+  .label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+    white-space: nowrap;
+  }
+  .label .icon { width: 0.875rem; height: 0.875rem; }
+
+  /* Farbiger Lichtschein in der Card-Ecke */
+  .card-glow { overflow: hidden; isolation: isolate; }
+  .card-glow::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    width: 16rem;
+    height: 16rem;
+    right: -6rem;
+    top: -7rem;
+    border-radius: 999px;
+    background: radial-gradient(circle, var(--glow, var(--glow-teal)) 0%, transparent 70%);
+    opacity: 0.55;
+    pointer-events: none;
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Pills (Status) + Live-Badge                                       */
+  /* ---------------------------------------------------------------- */
+  .pill {
+    --tone: var(--fg-dim);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    max-width: 100%;
+    padding: 0.32rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 550;
+    line-height: 1.2;
+    color: var(--tone);
+    background: color-mix(in srgb, var(--tone) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--tone) 24%, transparent);
+    white-space: nowrap;
+    transition: color 0.3s, background-color 0.3s, border-color 0.3s;
+  }
+  .pill .icon { width: 0.875rem; height: 0.875rem; }
+  .pill > span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .pill[data-tone="muted"]   { --tone: var(--fg-dim); background: var(--soft-bg); border-color: var(--line); }
+  .pill[data-tone="ok"]      { --tone: var(--ok-ink); }
+  .pill[data-tone="info"]    { --tone: var(--teal-ink); }
+  .pill[data-tone="warn"]    { --tone: var(--amber-ink); }
+  .pill[data-tone="danger"]  { --tone: var(--magenta-ink); }
+  .pill[data-tone="neutral"] { --tone: var(--fg); background: var(--soft-bg); border-color: var(--line-strong); }
+  .pill[data-tone="neutral"] .icon { color: var(--fg-dim); }
+  .pill-dot {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 999px;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+  .pill[data-tone="ok"] .pill-dot { animation: pulse-dot 2s ease-out infinite; }
+  @keyframes pulse-dot {
+    0%   { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 60%, transparent); }
+    70%  { box-shadow: 0 0 0 6px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+  /* Header-Pill: auf schmalen Screens nur der Punkt */
+  .conn-pill .conn-text { display: none; }
+  @media (min-width: 640px) {
+    .conn-pill .conn-text { display: inline; max-width: 14rem; }
+  }
+  @media (max-width: 639.98px) {
+    .conn-pill { padding: 0.55rem; }
+  }
+
+  .live-badge {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.6875rem;
+    font-weight: 650;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+  }
+  .live-badge .pill-dot { background: currentColor; }
+  .live-badge[data-state="live"] { color: var(--ok-ink); }
+  .live-badge[data-state="live"] .pill-dot { animation: pulse-dot 1.6s ease-out infinite; }
+
+  /* ---------------------------------------------------------------- */
+  /* Segmented Control (Zeitraum Live) + Chips (Verlauf-Filter)        */
+  /* ---------------------------------------------------------------- */
+  .seg {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+    border-radius: 999px;
+    background: var(--soft-bg);
+    border: 1px solid var(--line);
+  }
+  .seg::-webkit-scrollbar { display: none; }
+  .seg button,
+  .chip {
+    flex-shrink: 0;
+    padding: 0.36rem 0.8rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 550;
+    color: var(--fg-dim);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+    transition: color 0.2s, background-color 0.2s, box-shadow 0.2s;
+  }
+  .seg button:hover,
+  .chip:hover { color: var(--fg); background: var(--soft-bg-hover); }
+  .seg button[aria-pressed="true"],
+  .chip[aria-pressed="true"] {
+    color: var(--on-accent);
+    background: var(--color-brand-teal);
+    box-shadow: 0 6px 18px -8px var(--glow-teal);
+  }
+  .chip {
+    border: 1px solid var(--line);
+    background: var(--soft-bg);
+    padding: 0.42rem 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .chip[aria-pressed="true"] { border-color: transparent; }
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.5rem 1rem;
+    border-radius: 999px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--on-accent);
+    background: var(--color-brand-teal);
+    box-shadow: 0 8px 22px -10px var(--glow-teal);
+    transition: filter 0.2s, transform 0.2s;
+  }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:active { transform: translateY(1px); }
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.32rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 550;
+    color: var(--fg);
+    background: var(--soft-bg);
+    border: 1px solid var(--line);
+    transition: background-color 0.2s, border-color 0.2s;
+  }
+  .btn-ghost:hover { background: var(--soft-bg-hover); border-color: var(--line-strong); }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+  }
+  .field input {
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--fg);
+    background: var(--soft-bg);
+    border: 1px solid var(--line-strong);
+    border-radius: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    min-width: 0;
+    font-variant-numeric: tabular-nums;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .field input:focus {
+    outline: none;
+    border-color: var(--color-brand-teal);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-brand-teal) 25%, transparent);
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Offline-/Hinweis-Banner + Leerzustände                            */
+  /* ---------------------------------------------------------------- */
+  .banner {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding: 0.875rem 1rem;
+    border-radius: 1.125rem;
+    border: 1px solid var(--line);
+    background: var(--card-bg);
+    box-shadow: var(--card-shadow);
+  }
+  .banner[hidden] { display: none; }
+  .banner-icon {
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    flex-shrink: 0;
+    border-radius: 0.875rem;
+    color: var(--fg-dim);
+    background: var(--soft-bg);
+    border: 1px solid var(--line);
+  }
+  .banner[data-kind="server"] .banner-icon {
+    color: var(--magenta-ink);
+    background: color-mix(in srgb, var(--color-brand-magenta) 12%, transparent);
+    border-color: color-mix(in srgb, var(--color-brand-magenta) 28%, transparent);
+  }
+  .banner-title { font-weight: 600; font-size: 0.9375rem; letter-spacing: -0.01em; }
+  .banner-text { font-size: 0.8125rem; color: var(--fg-dim); margin-top: 0.1rem; }
+
+  .empty-state {
+    display: grid;
+    justify-items: center;
+    text-align: center;
+    gap: 0.5rem;
+    padding: 3rem 1rem;
+    color: var(--fg-dim);
+  }
+  .empty-state-icon {
+    display: grid;
+    place-items: center;
+    width: 4.5rem;
+    height: 4.5rem;
+    margin-bottom: 0.5rem;
+    border-radius: 1.5rem;
+    color: var(--teal-ink);
+    background: color-mix(in srgb, var(--color-brand-teal) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-brand-teal) 22%, transparent);
+    box-shadow: 0 20px 50px -20px var(--glow-teal);
+  }
+  .empty-state-title { font-size: 1rem; font-weight: 600; color: var(--fg); }
+  .empty-state-text { font-size: 0.8125rem; max-width: 26rem; }
+
+  /* ---------------------------------------------------------------- */
+  /* Live: Hero (Gauge + Kennzahlen)                                   */
+  /* ---------------------------------------------------------------- */
+  .hero-grid {
+    display: grid;
+    gap: 0.75rem;
+    transition: opacity 0.4s;
+  }
+  @media (min-width: 640px) { .hero-grid { gap: 1rem; } }
+  @media (min-width: 1024px) {
+    .hero-grid { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 1.25rem; }
+  }
+  .is-offline .hero-grid .metric-value,
+  .is-offline .hero-grid .gauge,
+  .is-offline .hero-grid .bar,
+  .is-offline .hero-grid .spark { opacity: 0.45; filter: saturate(0.4); }
+
+  .speed-card { --glow: var(--glow-teal); display: flex; flex-direction: column; gap: 0.5rem; }
+  .speed-card.card-glow::before { width: 26rem; height: 26rem; right: auto; left: 50%; top: 2rem; transform: translateX(-50%); opacity: 0.35; }
+
+  .gauge {
+    position: relative;
+    width: min(100%, 19rem);
+    margin: 0 auto;
+    aspect-ratio: 1 / 0.86;
+    transition: opacity 0.4s, filter 0.4s;
+  }
+  .gauge svg { position: absolute; inset: 0; width: 100%; height: auto; overflow: visible; }
+  .gauge-track { fill: none; stroke: var(--track); stroke-width: 14; stroke-linecap: round; }
+  .gauge-value {
+    fill: none;
+    stroke: url(#gauge-grad);
+    stroke-width: 14;
+    stroke-linecap: round;
+    filter: drop-shadow(0 0 10px var(--glow-teal));
+    transition: stroke-dashoffset 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .gauge-tick { stroke: var(--fg-faint); stroke-width: 1.5; stroke-linecap: round; opacity: 0.55; }
+  .gauge-tick.is-major { stroke: var(--fg-dim); stroke-width: 2; opacity: 0.9; }
+  .gauge-tick.is-lit { stroke: var(--teal-ink); opacity: 1; }
+  .gauge-scale { fill: var(--fg-faint); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .gauge-knob-group { transform-origin: 120px 120px; transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
+  .gauge-knob { fill: #fff; stroke: var(--color-brand-teal); stroke-width: 3; filter: drop-shadow(0 0 6px var(--glow-teal)); }
+  .gauge-center {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-46%);
+    display: grid;
+    justify-items: center;
+    pointer-events: none;
+  }
+  .gauge-num {
+    font-size: clamp(3.25rem, 14.5vw, 4.5rem);
+    font-weight: 700;
+    line-height: 0.95;
+    letter-spacing: -0.045em;
+    font-variant-numeric: tabular-nums;
+    background: linear-gradient(180deg, var(--fg) 30%, color-mix(in srgb, var(--fg) 70%, var(--color-brand-teal)) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .gauge-unit {
+    margin-top: 0.35rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--teal-ink);
+  }
+
+  .odo {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-radius: 1rem;
+    border: 1px solid var(--line);
+    background: var(--soft-bg);
+    overflow: hidden;
+  }
+  .odo > div { padding: 0.625rem 0.875rem; display: grid; gap: 0.15rem; min-width: 0; }
+  .odo > div + div { border-left: 1px solid var(--line); }
+  .odo-val {
+    font-size: 1.125rem;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .odo-val small, .metric-unit {
+    font-size: 0.75rem;
+    font-weight: 550;
+    letter-spacing: 0;
+    color: var(--fg-dim);
+    margin-left: 0.2rem;
+  }
+  .status-row { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .status-row [hidden] { display: none; }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+  @media (min-width: 640px) { .metrics-grid { gap: 1rem; } }
+  @media (min-width: 1024px) {
+    .metrics-grid { grid-template-rows: 1fr auto; gap: 1.25rem; }
+  }
+  .metric { display: flex; flex-direction: column; gap: 0.75rem; }
+  .metric-lg { grid-column: span 3; justify-content: space-between; }
+  .metric-sm { grid-column: span 3; gap: 0.4rem; }
+  .metric-temp { grid-column: span 6; }
+  @media (min-width: 640px) {
+    .metric-sm, .metric-temp { grid-column: span 2; }
+  }
+  .metric-value {
+    font-size: 1.5rem;
+    font-weight: 650;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    transition: opacity 0.4s, filter 0.4s;
+  }
+  .metric-lg .metric-value { font-size: clamp(2.25rem, 9vw, 3.5rem); letter-spacing: -0.045em; }
+  .metric-lg .metric-unit { font-size: 0.9375rem; }
+  @media (min-width: 640px) { .metric-value { font-size: 1.75rem; } }
+  .metric-caption { font-size: 0.75rem; color: var(--fg-dim); font-variant-numeric: tabular-nums; min-height: 1rem; }
+  .metric-batt { --glow: var(--glow-amber); }
+  .metric-batt .metric-value { color: var(--amber-ink); }
+  .metric-power { --glow: var(--glow-magenta); }
+  .metric-power .metric-value { color: var(--magenta-ink); }
+  .metric-batt[data-level="low"] { --glow: var(--glow-magenta); }
+  .metric-batt[data-level="low"] .metric-value { color: var(--magenta-ink); }
+
+  /* Sparkline (letzte 5 min) in den großen Kennzahl-Karten */
+  .spark { width: 100%; flex: 1 1 0; min-height: 3rem; max-height: 7rem; overflow: visible; }
+  .spark-line { fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  .spark-area { fill: currentColor; fill-opacity: 0.12; stroke: none; }
+  .metric-batt .spark { color: var(--chart-amber); }
+  .metric-power .spark { color: var(--chart-magenta); }
+
+  .temp-pair { display: flex; gap: 1.25rem; flex-wrap: wrap; }
+  .temp-pair > div { display: grid; gap: 0.3rem; }
+  .temp-pair [hidden] { display: none; }
+
+  /* Balken (Akku segmentiert, Leistung glatt) */
+  .bar {
+    position: relative;
+    transition: opacity 0.4s, filter 0.4s;
+    height: 0.625rem;
+    border-radius: 999px;
+    background: var(--track);
+    overflow: hidden;
+  }
+  .bar-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 0;
+    border-radius: inherit;
+    transition: width 0.7s cubic-bezier(0.22, 1, 0.36, 1), background 0.4s;
+  }
+  .bar-batt {
+    height: 1.25rem;
+    border-radius: 0.4rem;
+    -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 calc(10% - 3px), transparent calc(10% - 3px) 10%);
+    mask-image: repeating-linear-gradient(90deg, #000 0 calc(10% - 3px), transparent calc(10% - 3px) 10%);
+  }
+  .bar-batt .bar-fill { border-radius: 0; background: linear-gradient(90deg, #ff8f00, var(--color-brand-amber) 60%, #ffd54f); box-shadow: 0 0 16px var(--glow-amber); }
+  .metric-batt[data-level="low"] .bar-batt .bar-fill { background: linear-gradient(90deg, #ad1457, var(--color-brand-magenta)); }
+  .bar-power .bar-fill { background: linear-gradient(90deg, #ad1457, var(--color-brand-magenta) 55%, #ff6f9f); box-shadow: 0 0 14px var(--glow-magenta); }
+  .bar-power[data-regen="1"] .bar-fill { background: linear-gradient(90deg, #00838f, var(--color-brand-teal)); box-shadow: 0 0 14px var(--glow-teal); }
+
+  /* ---------------------------------------------------------------- */
+  /* Charts (uPlot)                                                    */
+  /* ---------------------------------------------------------------- */
+  .chart-grid { display: grid; gap: 0.75rem; }
+  @media (min-width: 640px) { .chart-grid { gap: 1rem; } }
+  @media (min-width: 768px) { .chart-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .chart-card { padding: 0.875rem 0.875rem 0.5rem; }
+  @media (min-width: 640px) { .chart-card { padding: 1rem 1.125rem 0.625rem; } }
+  .chart-card .card-head { margin-bottom: 0.5rem; }
+  .swatch {
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 0.2rem;
+    flex-shrink: 0;
+    background: var(--sw, var(--color-brand-teal));
+    box-shadow: 0 0 10px var(--sw, var(--color-brand-teal));
+  }
+  .swatch-line { height: 0.2rem; width: 0.875rem; border-radius: 999px; }
+  .swatch-dash {
+    height: 0.2rem; width: 0.875rem; border-radius: 0; box-shadow: none;
+    background: repeating-linear-gradient(90deg, var(--sw) 0 4px, transparent 4px 7px);
+  }
+  .chart-host-inner, .chart-canvas { width: 100%; min-width: 0; }
+
+  .chart-tip {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 10;
+    pointer-events: none;
+    min-width: 8.5rem;
+    padding: 0.5rem 0.625rem;
+    border-radius: 0.75rem;
+    background: var(--glass-bg);
+    border: 1px solid var(--line-strong);
+    box-shadow: 0 14px 30px -14px rgba(0, 0, 0, 0.65);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    font-size: 0.75rem;
+    color: var(--fg);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .chart-tip[hidden] { display: none; }
+  .chart-tip-time { color: var(--fg-dim); font-size: 0.6875rem; margin-bottom: 0.3rem; }
+  .chart-tip-row { display: flex; align-items: center; gap: 0.45rem; }
+  .chart-tip-row + .chart-tip-row { margin-top: 0.2rem; }
+  .chart-tip-row b { margin-left: auto; padding-left: 0.75rem; font-weight: 650; }
+  .chart-tip-dot { width: 0.5rem; height: 0.5rem; border-radius: 999px; flex-shrink: 0; }
+}
+
+/* uPlot-Overrides (außerhalb von @layer, damit sie das Vendor-CSS
+   sicher überstimmen). */
+.uplot { width: 100% !important; font-family: inherit; }
+.uplot .u-over { cursor: crosshair; }
+.uplot .u-cursor-x { border-right: 1px dashed var(--line-strong) !important; }
+.uplot .u-cursor-y { display: none; }
+.uplot .u-select { background: color-mix(in srgb, var(--color-brand-teal) 14%, transparent); }
+.uplot .u-cursor-pt { box-shadow: 0 0 0 3px color-mix(in srgb, var(--card-solid) 70%, transparent); }
 .uplot .u-legend {
-  color: var(--color-on-surface-dim);
+  color: var(--fg-dim);
   font-size: 12px;
   margin-top: 8px;
   text-align: left;
 }
-.uplot .u-legend .u-label { color: var(--color-on-surface-dim); }
-.uplot .u-legend .u-value { color: var(--color-on-surface); font-variant-numeric: tabular-nums; }
-.uplot .u-legend tr { margin-right: 12px; }
 
-/* Leaflet-Map-Host für Trip-Karten.
-   Höhe ist nur dann fix, wenn auch wirklich Tiles drin sind (.has-map) — beim
-   "Keine Standortdaten"-Hint bleibt der Container kompakt.
-   z-index:0 verhindert dass Leaflets interne Stacking-Contexts mit uPlot oder
-   dem sticky Header kollidieren. */
-.map-host.has-map {
-  height: 200px;
-  border-radius: 1rem;
-  overflow: hidden;
-  position: relative;
-  z-index: 0;
-  background: var(--color-surface-2);
-}
-@media (min-width: 640px) {
-  .map-host.has-map { height: 260px; }
-}
-.map-host .leaflet-container {
-  width: 100%;
-  height: 100%;
-  background: var(--color-surface-2);
-}
-/* OSM-Attribution dezenter ans Dark-Theme angleichen — der Link bleibt
-   klickbar, damit die Lizenzpflicht erfüllt ist. */
-.map-host .leaflet-control-attribution {
-  background: rgba(14, 17, 22, 0.7);
-  color: var(--color-on-surface-dim);
-  font-size: 10px;
-}
-.map-host .leaflet-control-attribution a {
-  color: var(--color-brand-teal);
+/* ------------------------------------------------------------------ */
+/* Karten (Leaflet)                                                    */
+/* ------------------------------------------------------------------ */
+@layer components {
+  .map-frame {
+    position: relative;
+    border-radius: 1rem;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: var(--map-bg);
+    isolation: isolate;
+  }
+
+  .map-overlay {
+    position: absolute;
+    z-index: 401; /* über Leaflet-Panes/Controls */
+    background: var(--glass-bg);
+    border: 1px solid var(--line-strong);
+    -webkit-backdrop-filter: blur(12px) saturate(150%);
+    backdrop-filter: blur(12px) saturate(150%);
+    box-shadow: 0 12px 28px -14px rgba(0, 0, 0, 0.7);
+    border-radius: 0.875rem;
+    user-select: none;
+  }
+  .map-zoom {
+    left: 0.625rem;
+    top: 0.625rem;
+    padding: 0.5rem 0.375rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--fg-dim);
+  }
+  .map-layers {
+    right: 0.625rem;
+    top: 0.625rem;
+    padding: 0.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .map-follow {
+    right: 0.625rem;
+    bottom: 1.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .map-follow[data-follow="1"] { color: var(--teal-ink); }
 }
 
 /* Vertikaler Zoom-Slider fuer die Live-Map. writing-mode + slider-vertical
@@ -76,30 +950,256 @@
 .live-map-zoom-slider {
   writing-mode: vertical-lr;
   direction: rtl;
-  width: 24px;
-  height: 140px;
+  width: 22px;
+  height: 120px;
   accent-color: var(--color-brand-teal);
   cursor: pointer;
 }
 
-/* Layer-Switcher der Live-Map. Active-State setzen wir in JS via .is-active —
-   einfacher als data-attribute-Selektoren fuer ein 3-Button-Stack. */
+/* Layer-Switcher der Live-Map. Active-State setzen wir in JS via .is-active. */
+.map-layer-btn {
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 550;
+  text-align: left;
+  color: var(--fg-dim);
+  transition: color 0.2s, background-color 0.2s;
+}
+.map-layer-btn:hover { color: var(--fg); background: var(--soft-bg-hover); }
 .map-layer-btn.is-active,
 .map-layer-btn.is-active:hover {
   background: var(--color-brand-teal);
-  color: #0e1116;
+  color: var(--on-accent);
 }
 
-/* Lucide-Style-Icons: Stroke folgt currentColor, runde Joins.
-   In Markup einsetzen mit <svg class="icon w-4 h-4">…</svg>; größere
-   Varianten einfach via Tailwind-Sizing. */
-.icon {
-  display: inline-block;
-  flex-shrink: 0;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  vertical-align: -0.15em;
+/* Leaflet-Host für Trip-Karten.
+   Höhe ist nur dann fix, wenn auch wirklich Tiles drin sind (.has-map) — beim
+   "Keine Standortdaten"-Hint bleibt der Container kompakt.
+   z-index:0 verhindert dass Leaflets interne Stacking-Contexts mit uPlot oder
+   dem sticky Header kollidieren. */
+.map-host.has-map {
+  height: 220px;
+  border-radius: 1rem;
+  overflow: hidden;
+  position: relative;
+  z-index: 0;
+  border: 1px solid var(--line);
+  background: var(--map-bg);
 }
+@media (min-width: 640px) {
+  .map-host.has-map { height: 280px; }
+}
+/* Live-Map-Höhe bewusst unlayered: leaflet.css ist ebenfalls unlayered und
+   würde Regeln aus @layer components sonst überstimmen. */
+#live-map { height: 300px; z-index: 0; }
+@media (min-width: 640px) { #live-map { height: 380px; } }
+.map-host .leaflet-container {
+  width: 100%;
+  height: 100%;
+}
+.map-host .leaflet-container,
+.map-frame .leaflet-container {
+  background: var(--map-bg);
+  font-family: inherit;
+}
+/* OSM-Kacheln im dunklen Theme abdunkeln — die Karte passt sich so dem
+   Rest der Oberfläche an, ohne einen zusätzlichen Kachel-Anbieter. */
+:root[data-theme="dark"] .tiles-themed {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.55);
+}
+/* OSM-Attribution dezent ans Theme angleichen — der Link bleibt
+   klickbar, damit die Lizenzpflicht erfüllt ist. */
+.app .leaflet-control-attribution {
+  background: var(--glass-bg) !important;
+  color: var(--fg-dim);
+  font-size: 10px;
+  border-top-left-radius: 0.5rem;
+  padding: 1px 6px;
+}
+.app .leaflet-control-attribution a { color: var(--teal-ink); }
+.app .leaflet-bar {
+  border: 1px solid var(--line-strong) !important;
+  border-radius: 0.75rem !important;
+  overflow: hidden;
+  box-shadow: 0 10px 24px -14px rgba(0, 0, 0, 0.7) !important;
+}
+.app .leaflet-bar a,
+.app .leaflet-bar a:hover {
+  background: var(--glass-bg);
+  color: var(--fg);
+  border-bottom-color: var(--line) !important;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.app .leaflet-bar a:hover { color: var(--teal-ink); }
+.app .leaflet-tooltip {
+  background: var(--glass-bg);
+  color: var(--fg);
+  border: 1px solid var(--line-strong);
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.6);
+  font-weight: 600;
+  font-size: 11px;
+}
+.app .leaflet-tooltip-top::before { border-top-color: var(--line-strong); }
+
+/* Live-Position: Punkt mit pulsierendem Ring */
+.live-dot {
+  position: relative;
+  width: 18px;
+  height: 18px;
+}
+.live-dot::before,
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+}
+.live-dot::after {
+  background: var(--color-brand-teal);
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 0 16px var(--glow-teal);
+}
+.live-dot::before {
+  background: var(--color-brand-teal);
+  animation: live-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes live-ping {
+  0%   { transform: scale(1);   opacity: 0.55; }
+  80%, 100% { transform: scale(3.2); opacity: 0; }
+}
+
+/* ------------------------------------------------------------------ */
+/* Verlauf                                                             */
+/* ------------------------------------------------------------------ */
+@layer components {
+  .page-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+  }
+  .page-title {
+    font-size: clamp(1.5rem, 5vw, 2rem);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.1;
+  }
+  .page-sub { margin-top: 0.3rem; font-size: 0.875rem; color: var(--fg-dim); }
+
+  .agg-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+  .agg-grid[hidden] { display: none; }
+  @media (min-width: 768px) { .agg-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; } }
+  .stat-tile { display: grid; gap: 0.5rem; padding: 0.875rem 1rem; }
+  .stat-tile .stat-value {
+    font-size: clamp(1.375rem, 5vw, 1.75rem);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .stat-tile .stat-value small { font-size: 0.8125rem; font-weight: 550; letter-spacing: 0; color: var(--fg-dim); margin-left: 0.2rem; }
+  .stat-tile .stat-caption { font-size: 0.75rem; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+  .stat-tile[data-accent="teal"]    .label .icon { color: var(--teal-ink); }
+  .stat-tile[data-accent="amber"]   .label .icon { color: var(--amber-ink); }
+  .stat-tile[data-accent="magenta"] .label .icon { color: var(--magenta-ink); }
+
+  .day-group { display: grid; gap: 0.625rem; }
+  .day-group + .day-group { margin-top: 0.75rem; }
+  .day-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.625rem;
+    padding: 0 0.25rem;
+  }
+  .day-head-title { font-size: 0.875rem; font-weight: 650; letter-spacing: -0.01em; }
+  .day-head-meta { font-size: 0.75rem; color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+  .day-head::after { content: ""; flex: 1; height: 1px; background: var(--line); align-self: center; }
+
+  .trip-card {
+    cursor: pointer;
+    padding: 0.875rem 1rem;
+    transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
+  }
+  @media (min-width: 640px) { .trip-card { padding: 1rem 1.25rem; } }
+  .trip-card:hover { border-color: var(--line-strong); }
+  .trip-card.is-open { border-color: color-mix(in srgb, var(--color-brand-teal) 35%, transparent); }
+  .trip-card .chart-host, .trip-card .map-host { cursor: auto; }
+  .trip-head { display: flex; align-items: center; gap: 0.875rem; min-width: 0; }
+  .trip-badge {
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    flex-shrink: 0;
+    border-radius: 0.875rem;
+    color: var(--teal-ink);
+    background: color-mix(in srgb, var(--color-brand-teal) 11%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-brand-teal) 22%, transparent);
+  }
+  .trip-title { font-weight: 650; font-size: 0.9375rem; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .trip-sub { font-size: 0.75rem; color: var(--fg-dim); display: flex; align-items: center; gap: 0.35rem; min-width: 0; }
+  .trip-sub span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .trip-distance {
+    margin-left: auto;
+    text-align: right;
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .trip-distance small { font-size: 0.75rem; font-weight: 550; color: var(--fg-dim); letter-spacing: 0; margin-left: 0.15rem; }
+  .trip-chevron { color: var(--fg-faint); transition: transform 0.3s, color 0.3s; flex-shrink: 0; }
+  .trip-card:hover .trip-chevron { color: var(--fg-dim); }
+  .trip-card.is-open .trip-chevron { transform: rotate(180deg); color: var(--teal-ink); }
+  .trip-stats {
+    margin-top: 0.875rem;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    border-radius: 0.875rem;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: var(--line);
+  }
+  @media (min-width: 640px) { .trip-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  .trip-stats > div { padding: 0.5rem 0.75rem; background: var(--card-solid); min-width: 0; }
+  :root[data-theme="dark"] .trip-stats > div { background: #121720; }
+  .trip-stats dt { font-size: 0.6875rem; color: var(--fg-dim); display: inline-flex; align-items: center; gap: 0.35rem; }
+  .trip-stats dt .icon { width: 0.8rem; height: 0.8rem; }
+  .trip-stats dd { margin-top: 0.15rem; font-size: 0.875rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trip-detail-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.875rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--fg-dim);
+  }
+  .legend-item { display: inline-flex; align-items: center; gap: 0.4rem; color: var(--fg); font-weight: 550; }
+  .hint { color: var(--fg-faint); }
+  .notice { font-size: 0.75rem; color: var(--fg-dim); padding: 0.25rem 0.125rem; }
+  .notice-error { color: var(--magenta-ink); }
+}
+
+/* Weniger Bewegung, wenn der Nutzer es so eingestellt hat. */
+@media (prefers-reduced-motion: reduce) {
+  .app *, .app *::before, .app *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Live-Trail mit leichtem Leuchten (SVG-Renderer von Leaflet) */
+.live-trail { filter: drop-shadow(0 0 4px rgba(77, 208, 225, 0.65)); }

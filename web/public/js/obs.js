@@ -15,12 +15,17 @@
     root.classList.add('flex', 'flex-col', 'items-start', 'gap-2');
   }
   if (theme === 'light') {
-    document.body.classList.add('text-black');
+    // .obs-light schaltet die Farb-Variablen in obs.css um (dunkler Text,
+    // heller Schatten); text-black bleibt für Abwärtskompatibilität.
+    document.body.classList.add('obs-light', 'text-black');
   }
-  const speedEl = document.getElementById('obs-speed');
-  // Swap accent class on the speed number based on ?accent
-  speedEl.classList.remove('accent-teal');
-  speedEl.classList.add(`accent-${accent}`);
+  // Swap accent class on the speed number (and its gauge icon) based on
+  // ?accent. Unbekannte Werte fallen auf teal zurück.
+  const accentCls = ['teal', 'amber', 'magenta'].includes(accent) ? `accent-${accent}` : 'accent-teal';
+  root.querySelectorAll('.accent-teal').forEach(el => {
+    el.classList.remove('accent-teal');
+    el.classList.add(accentCls);
+  });
 
   // ---------- DOM update ----------
   const fmt = (v, digits = 0) =>

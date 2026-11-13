@@ -1,11 +1,19 @@
-// history.js — fetches /api/trips and renders an expandable card list.
-// Clicking a card lazily fetches /api/trips/:id and draws a uPlot speed chart.
+// history.js — fetches /api/trips and renders an expandable card list,
+// gruppiert nach Tag, plus Summen-Kacheln für den gewählten Zeitraum.
+// Clicking a card lazily fetches /api/trips/:id (Chart) und
+// /api/trips/:id/locations (Route-Karte).
+// Gemeinsame Helfer (Theme, Zahlenformat, Chart-Theme, Tooltip) kommen aus
+// /js/ui.js (window.EpfUi).
 
 (function () {
   'use strict';
 
+  const UI = window.EpfUi;
+  const num = UI.num;
+
   const list = document.getElementById('trip-list');
   const emptyMsg = document.getElementById('empty-msg');
+  const aggHost = document.getElementById('agg-stats');
 
   // EU-Datum + 24h-Zeit: "22.05.2026, 14:30". hour12:false forciert 24h
   // auch in en-US-Locales, die sonst AM/PM einsetzen.
@@ -14,34 +22,19 @@
     hour: '2-digit', minute: '2-digit',
     hour12: false,
   });
-  const cursorTimeFmt = new Intl.DateTimeFormat('de-DE', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  const timeFmt = new Intl.DateTimeFormat('de-DE', {
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  const dayFmt = new Intl.DateTimeFormat('de-DE', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
   });
   function fmtDate(ms) {
-    if (!ms) return '--';
+    if (!ms) return UI.DASH;
     return dateFmt.format(new Date(ms));
   }
-  function cursorValue(_self, rawValue) {
-    return rawValue == null ? '--' : cursorTimeFmt.format(new Date(rawValue * 1000));
-  }
-
-  // EU-Achsen-Werte für uPlot, identisch zu dashboard.js — kurze Duplikation
-  // hier statt zusätzlichem Shared-Script, damit history.html nicht noch eine
-  // <script>-Zeile braucht. Tick-Default ist self-contained (volle Zeit),
-  // Kontext-Zeile bringt nur das Datum dazu (keine Zeit-Doppelung).
-  const EU_AXIS_VALUES = [
-    [3600 * 24 * 365, "{YYYY}",            null,             null, null,           null, null, null, 1],
-    [3600 * 24 * 28,  "{MMM}",             "\n{YYYY}",       null, null,           null, null, null, 1],
-    [3600 * 24,       "{DD}.{MM}.",        "\n{YYYY}",       null, null,           null, null, null, 1],
-    [3600,            "{HH}:{mm}",         "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
-    [60,              "{HH}:{mm}",         "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
-    [1,               "{HH}:{mm}:{ss}",    "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
-    [0.001,           "{HH}:{mm}:{ss}.{fff}", "\n{DD}.{MM}.{YYYY}", null, "\n{DD}.{MM}.", null, null, null, 1],
-  ];
 
   function fmtDuration(s) {
-    if (s == null) return '--';
+    if (s == null) return UI.DASH;
     const m = Math.floor(s / 60);
     const sec = s % 60;
     if (m < 60) return `${m} min ${sec} s`;
@@ -50,7 +43,11 @@
   }
 
   function fmtNum(v, digits = 1) {
-    return v == null ? '--' : Number(v).toFixed(digits);
+    return num(v, digits);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
   // Kleines Lucide-Icon-Vokabular. fill=none + stroke=currentColor wird global
@@ -63,6 +60,10 @@
     zap:         '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
     bike:        '<circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/>',
     calendar:    '<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>',
+    chevron:     '<path d="m6 9 6 6 6-6"/>',
+    hash:        '<line x1="4" x2="20" y1="9" y2="9"/><line x1="4" x2="20" y1="15" y2="15"/><line x1="10" x2="8" y1="3" y2="21"/><line x1="16" x2="14" y1="3" y2="21"/>',
+    maximize:    '<polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/>',
+    minimize:    '<polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" x2="21" y1="10" y2="3"/><line x1="3" x2="10" y1="21" y2="14"/>',
   };
   function svg(key, cls = 'icon w-3.5 h-3.5') {
     return `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[key]}</svg>`;
@@ -71,9 +72,7 @@
   function statHtml(iconKey, label, value) {
     return `
       <div>
-        <dt class="text-[var(--color-on-surface-dim)] inline-flex items-center gap-1.5">
-          ${svg(iconKey)} ${label}
-        </dt>
+        <dt>${svg(iconKey)} ${label}</dt>
         <dd>${value}</dd>
       </div>`;
   }
@@ -88,29 +87,72 @@
   }
 
   function cardHtml(trip) {
+    const running = !trip.ended_at;
+    const timeRange = running
+      ? `${timeFmt.format(new Date(trip.started_at))} – läuft`
+      : `${timeFmt.format(new Date(trip.started_at))} – ${timeFmt.format(new Date(trip.ended_at))}`;
     return `
-      <article data-trip-id="${trip.id}"
-               class="rounded-2xl bg-[var(--color-surface-1)] p-4 cursor-pointer hover:bg-[var(--color-surface-2)] transition">
-        <header class="flex items-baseline justify-between gap-3 flex-wrap">
-          <div class="font-medium inline-flex items-center gap-2">
-            ${svg('calendar', 'icon w-4 h-4 text-[var(--color-on-surface-dim)]')}
-            ${fmtDate(trip.started_at)}
+      <article data-trip-id="${escapeHtml(trip.id)}" class="card trip-card" tabindex="0"
+               aria-expanded="false" title="${fmtDate(trip.started_at)}">
+        <header class="trip-head">
+          <span class="trip-badge">${svg('route', 'icon w-5 h-5')}</span>
+          <div class="min-w-0">
+            <div class="trip-title">${timeRange}</div>
+            <div class="trip-sub">
+              ${running ? '<span class="pill" data-tone="ok" style="padding:0.05rem 0.45rem;font-size:0.6875rem"><span class="pill-dot"></span>Laufend</span>' : ''}
+              <span>${escapeHtml(displayScooterName(trip.scooter_name))}</span>
+            </div>
           </div>
-          <div class="text-sm text-[var(--color-on-surface-dim)] inline-flex items-center gap-1.5">
-            ${svg('bike')} ${displayScooterName(trip.scooter_name)}
-          </div>
+          <div class="trip-distance">${trip.distance_km != null
+            ? `${fmtNum(trip.distance_km, 2)}<small>km</small>`
+            : `<small>${running ? 'unterwegs' : 'k. A.'}</small>`}</div>
+          ${svg('chevron', 'icon w-5 h-5 trip-chevron')}
         </header>
-        <dl class="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm tabular-nums">
-          ${statHtml('route',      'Strecke',   `${fmtNum(trip.distance_km, 2)} km`)}
-          ${statHtml('clock',      'Dauer',     fmtDuration(trip.duration_s))}
+        <dl class="trip-stats">
+          ${statHtml('clock',      'Dauer',     running ? 'läuft' : fmtDuration(trip.duration_s))}
           ${statHtml('gauge',      'Max.',      `${fmtNum(trip.max_speed_kmh, 1)} km/h`)}
-          ${statHtml('trendingUp', 'Durch. Ø',  `${fmtNum(trip.avg_speed_kmh, 1)} km/h`)}
+          ${statHtml('trendingUp', 'Ø Tempo',   `${fmtNum(trip.avg_speed_kmh, 1)} km/h`)}
           ${statHtml('zap',        'Energie',   `${fmtNum(trip.energy_wh, 1)} Wh`)}
         </dl>
         <div class="chart-host mt-4 hidden"></div>
         <div class="map-host mt-3 hidden"></div>
       </article>
     `;
+  }
+
+  // Tages-Gruppen: "Heute", "Gestern", sonst "Mittwoch, 12. November 2026".
+  function dayKey(ms) {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  }
+  function dayLabel(ms) {
+    const d = new Date(ms); d.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const diff = Math.round((today - d) / 86_400_000);
+    if (diff === 0) return 'Heute';
+    if (diff === 1) return 'Gestern';
+    return dayFmt.format(d);
+  }
+  function groupedHtml(trips) {
+    const groups = [];
+    let cur = null;
+    for (const t of trips) {
+      const k = dayKey(t.started_at);
+      if (!cur || cur.key !== k) { cur = { key: k, ts: t.started_at, trips: [] }; groups.push(cur); }
+      cur.trips.push(t);
+    }
+    return groups.map(g => {
+      const km = g.trips.reduce((a, t) => a + (t.distance_km || 0), 0);
+      const n = g.trips.length;
+      return `
+        <section class="day-group">
+          <div class="day-head">
+            <span class="day-head-title">${dayLabel(g.ts)}</span>
+            <span class="day-head-meta">${n} ${n === 1 ? 'Fahrt' : 'Fahrten'} · ${num(km, 1)} km</span>
+          </div>
+          ${g.trips.map(cardHtml).join('')}
+        </section>`;
+    }).join('');
   }
 
   // Mausrad-Zoom-Plugin für uPlot. Standard hat nur Drag-to-Select-Zoom —
@@ -144,21 +186,42 @@
     };
   }
 
+  // Offene Trip-Charts, damit ein Theme-Wechsel sie neu einfärbt.
+  const openCharts = new Set();
+  UI.onThemeChange(() => openCharts.forEach(u => u.redraw()));
+
+  function disposeTripChart(article) {
+    const host = article.querySelector('.chart-host');
+    if (host && host._uplot) {
+      openCharts.delete(host._uplot);
+      try { host._uplot.destroy(); } catch { /* ignore */ }
+      host._uplot = null;
+    }
+    if (host && host._ro) { host._ro.disconnect(); host._ro = null; }
+  }
+
   async function renderTripChart(article, tripId) {
     const host = article.querySelector('.chart-host');
+    disposeTripChart(article);
     host.classList.remove('hidden');
-    host.innerHTML = '<div class="text-xs text-[var(--color-on-surface-dim)]">Lade…</div>';
+    host.innerHTML = '<div class="notice">Lade Telemetrie…</div>';
 
-    const r = await window.EpfAuth.fetchAuthed(`/api/trips/${encodeURIComponent(tripId)}`);
-    if (!r.ok) {
-      host.innerHTML = '<div class="text-xs text-red-400">Fahrt konnte nicht geladen werden</div>';
+    let samples;
+    try {
+      const r = await window.EpfAuth.fetchAuthed(`/api/trips/${encodeURIComponent(tripId)}`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      ({ samples } = await r.json());
+    } catch (err) {
+      console.warn('[history] could not load trip:', err);
+      host.innerHTML = '<div class="notice notice-error">Fahrt konnte nicht geladen werden.</div>';
       return;
     }
-    const { samples } = await r.json();
+    // Inzwischen wieder zugeklappt → nichts rendern.
+    if (!article.classList.contains('is-open')) return;
     host.innerHTML = '';
 
     if (!samples || samples.length === 0) {
-      host.innerHTML = '<div class="text-xs text-[var(--color-on-surface-dim)]">Keine Telemetrie-Daten für diese Fahrt</div>';
+      host.innerHTML = '<div class="notice">Keine Telemetrie-Daten für diese Fahrt.</div>';
       return;
     }
 
@@ -169,71 +232,92 @@
     const batt = samples.map(s => s.batteryPercent);
     const hasBatt = batt.some(v => v != null);
 
-    // Toolbar oben + Canvas-Container + Hilfetext unten. Click-Stop-Propagation
-    // damit Button-Klicks nicht den Trip-Card-Collapse triggern.
+    // Toolbar oben (Legende + Hinweis + Vergrößern) + Canvas-Container.
+    // Click-Stop-Propagation damit Button-Klicks nicht den Card-Collapse
+    // triggern.
     host.innerHTML = `
-      <div class="flex items-center justify-between gap-2 mb-2 text-xs text-[var(--color-on-surface-dim)]">
-        <span>Ziehen = Zoom · Mausrad = Zoom · Doppelklick = Reset</span>
-        <button class="zoom-btn px-2 py-1 rounded-md bg-[var(--color-surface-2)] hover:bg-[var(--color-surface-3)] text-[var(--color-on-surface)]" type="button">Vergrößern</button>
+      <div class="trip-detail-toolbar">
+        <span class="legend-item"><span class="swatch swatch-line" style="--sw: var(--chart-teal)"></span>Tempo</span>
+        ${hasBatt ? '<span class="legend-item"><span class="swatch swatch-dash" style="--sw: var(--chart-amber)"></span>Akku</span>' : ''}
+        <span class="hint hidden sm:inline">Ziehen/Mausrad = Zoom · Doppelklick = Reset</span>
+        <button class="zoom-btn btn-ghost ml-auto" type="button">${svg('maximize')}<span>Vergrößern</span></button>
       </div>
       <div class="chart-canvas"></div>
     `;
     const canvas = host.querySelector('.chart-canvas');
     const btn = host.querySelector('.zoom-btn');
 
-    const baseHeight = window.innerWidth < 640 ? 180 : 220;
+    const baseHeight = window.innerWidth < 640 ? 190 : 230;
     const largeHeight = window.innerWidth < 640 ? 360 : 460;
     let large = false;
 
+    const C = UI.chartColors;
     const chart = new uPlot({
       width: canvas.clientWidth || 600,
       height: baseHeight,
-      plugins: [wheelZoomPlugin({ factor: 0.85 })],
+      plugins: [wheelZoomPlugin({ factor: 0.85 }), UI.tooltipPlugin()],
+      padding: [10, hasBatt ? 4 : 18, 0, 0],
       scales: {
         x: { time: true },
         // Akku auf eigener Achse — fix 0..100% damit der Verlauf nicht
         // visuell explodiert wenn der User von 100→95 fährt.
         batt: { range: [0, 100] },
       },
-      // Legende mit Live-Werten unter dem Cursor — Hover zeigt Zeit + km/h + %.
-      legend: { show: true, live: true },
-      cursor: { drag: { x: true, y: false } },
+      // Statt Legende: schwebender Tooltip mit Zeit + km/h + %.
+      legend: { show: false },
+      cursor: { drag: { x: true, y: false }, points: { size: 9 } },
       axes: [
-        { stroke: '#9aa3b2', grid: { stroke: 'rgba(255,255,255,0.05)' }, values: EU_AXIS_VALUES },
-        { stroke: '#4DD0E1', grid: { stroke: 'rgba(255,255,255,0.05)' } },
+        UI.axisOpts({ values: UI.EU_AXIS_VALUES, space: () => (window.innerWidth < 640 ? 46 : 70) }),
+        UI.axisOpts({
+          size: 46, space: 32,
+          stroke: () => hasBatt ? C().teal : C().axis,
+          values: UI.yValues(),
+        }),
         // Akku-Achse rechts in Amber — visuell als "anderer Wert" erkennbar.
-        ...(hasBatt ? [{
-          scale: 'batt', stroke: '#FFB300', side: 1, grid: { show: false },
-          values: (_u, vals) => vals.map(v => v + '%'),
-        }] : []),
+        ...(hasBatt ? [UI.axisOpts({
+          scale: 'batt', side: 1, size: 46, space: 32, grid: { show: false },
+          stroke: () => C().amber,
+          values: UI.yValues(' %'),
+        })] : []),
       ],
       series: [
-        { label: 'Zeit', value: cursorValue },
+        { label: 'Zeit', value: (_u, v) => UI.timeLabel(v) },
         {
-          label: 'km/h',
-          stroke: '#4DD0E1',
+          label: 'Tempo',
+          stroke: UI.seriesStroke('teal'),
           width: 2,
-          fill: '#4DD0E122',
+          fill: UI.areaFill('teal'),
           spanGaps: true,
           // points.show ist per Default eine Function die auto-anzeigt sobald
-          // die Punkte genug Abstand haben — heißt im Default-Zoom unsichtbar
-          // (Dot-Suppe vermieden), aber sobald man reinzoomt erscheinen die
-          // Messpunkte automatisch. size sets the dot-radius.
-          points: { size: 6 },
-          value: (_self, v) => v == null ? '--' : `${v.toFixed(1)} km/h`,
+          // die Punkte genug Abstand haben — im Default-Zoom unsichtbar,
+          // beim Reinzoomen erscheinen die Messpunkte automatisch.
+          points: { size: 6, fill: () => C().surface },
+          value: (_self, v) => v == null ? UI.DASH : `${num(v, 1)} km/h`,
         },
         ...(hasBatt ? [{
           label: 'Akku',
           scale: 'batt',
-          stroke: '#FFB300',
+          stroke: UI.seriesStroke('amber'),
           width: 2,
-          dash: [4, 3],
+          dash: [5, 4],
           spanGaps: true,
-          points: { size: 6 },
-          value: (_self, v) => v == null ? '--' : `${v.toFixed(0)} %`,
+          points: { size: 6, fill: () => C().surface },
+          value: (_self, v) => v == null ? UI.DASH : `${num(v, 0)} %`,
         }] : []),
       ],
     }, hasBatt ? [xs, ys, batt] : [xs, ys], canvas);
+    host._uplot = chart;
+    openCharts.add(chart);
+    UI.whenFontsReady(() => { if (host._uplot === chart) chart.redraw(false, true); });
+
+    // Breite mitführen (Rotation, Fenstergröße).
+    if (window.ResizeObserver) {
+      host._ro = new ResizeObserver(() => {
+        const w = canvas.clientWidth;
+        if (w > 0 && w !== chart.width) chart.setSize({ width: w, height: chart.height });
+      });
+      host._ro.observe(canvas);
+    }
 
     // Vergrößern-Toggle: setSize() resized den Chart ohne re-init, der Zoom-
     // State bleibt erhalten. stopPropagation damit der Klick nicht zum Trip-
@@ -245,7 +329,9 @@
         width: canvas.clientWidth || 600,
         height: large ? largeHeight : baseHeight,
       });
-      btn.textContent = large ? 'Verkleinern' : 'Vergrößern';
+      btn.innerHTML = large
+        ? `${svg('minimize')}<span>Verkleinern</span>`
+        : `${svg('maximize')}<span>Vergrößern</span>`;
     });
   }
 
@@ -259,16 +345,15 @@
     leafletImagePathFixed = true;
   }
 
-  // Kleines Circle-Marker-Style-Preset — wir nutzen bewusst keine
-  // PNG-Default-Marker für Start/Ende, weil CircleMarker auf jedem Zoomlevel
-  // gleich groß bleiben und keinen zusätzlichen Asset-Request triggern.
+  // Circle-Marker für Start/Ende — bleiben auf jedem Zoomlevel gleich groß
+  // und brauchen keinen zusätzlichen Asset-Request.
   const startMarkerStyle = {
-    radius: 7, color: '#0e1116', weight: 2,
+    radius: 7, color: '#ffffff', weight: 2.5,
     fillColor: '#22c55e', fillOpacity: 1, // grün
   };
   const endMarkerStyle = {
-    radius: 7, color: '#0e1116', weight: 2,
-    fillColor: '#E91E63', fillOpacity: 1, // magenta/rot
+    radius: 7, color: '#ffffff', weight: 2.5,
+    fillColor: '#E91E63', fillOpacity: 1, // magenta
   };
 
   async function renderTripMap(article, tripId) {
@@ -281,7 +366,7 @@
       return;
     }
     host.classList.remove('hidden');
-    host.innerHTML = '<div class="text-xs text-[var(--color-on-surface-dim)] px-2 py-1">Lade Route…</div>';
+    host.innerHTML = '<div class="notice">Lade Route…</div>';
 
     let points;
     try {
@@ -294,13 +379,13 @@
       host.innerHTML = '';
       return;
     }
+    // Inzwischen wieder zugeklappt → nichts rendern.
+    if (!article.classList.contains('is-open')) return;
 
     if (!points || points.length < 2) {
-      // Alte Fahrten ohne Locations: kleines, dezent gefärbtes Hint statt
-      // einer leeren Map-Karte. Card-Höhe bleibt klein, kein Tile-Container
+      // Alte Fahrten ohne Locations: dezenter Hinweis statt leerer Karte.
       // (height/rounded greift nur wenn .map-host die Klasse .has-map trägt).
-      host.innerHTML =
-        '<div class="text-xs text-[var(--color-on-surface-dim)] italic px-2 py-1">Keine Standortdaten für diese Fahrt.</div>';
+      host.innerHTML = '<div class="notice">Keine Standortdaten für diese Fahrt.</div>';
       host.classList.remove('has-map');
       return;
     }
@@ -316,22 +401,24 @@
       scrollWheelZoom: false,   // Damit Scrollen in der Card nicht hängen bleibt
     });
 
+    // Im dunklen Theme per CSS-Filter abgedunkelt (.tiles-themed).
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors',
       maxZoom: 19,
+      className: 'tiles-themed',
     }).addTo(map);
 
     const poly = L.polyline(latlngs, {
       color: '#4DD0E1',
       weight: 4,
-      opacity: 0.9,
+      opacity: 0.95,
       lineJoin: 'round',
       lineCap: 'round',
+      className: 'live-trail',
     }).addTo(map);
 
     // Wegpunkte als kleine Dots sichtbar machen — sonst sieht ein Trip mit
-    // wenigen, weit auseinanderliegenden Fixes wie pure Luftlinie aus und
-    // der User kann nicht erkennen wo die einzelnen Samples liegen. Bei
+    // wenigen, weit auseinanderliegenden Fixes wie pure Luftlinie aus. Bei
     // sehr langen Trips (>500 Punkte) jeden N-ten Punkt nehmen, sonst
     // ruckelt die Map beim Schwenken.
     const stride = latlngs.length > 500 ? Math.ceil(latlngs.length / 500) : 1;
@@ -349,11 +436,10 @@
       .bindTooltip('Ende', { direction: 'top', offset: [0, -8] })
       .addTo(map);
 
-    map.fitBounds(poly.getBounds(), { padding: [16, 16] });
+    map.fitBounds(poly.getBounds(), { padding: [20, 20] });
 
-    // Falls der Card zwischenzeitlich resized wurde (Card-Expansion lädt Chart
-    // erst, dann Map → Höhe steht möglicherweise erst nach Chart-Render), nach
-    // dem nächsten Tick invalidateSize aufrufen, damit Tiles korrekt sitzen.
+    // Falls die Card zwischenzeitlich resized wurde (Chart rendert zuerst),
+    // nach dem nächsten Tick invalidateSize aufrufen, damit Tiles sitzen.
     requestAnimationFrame(() => map.invalidateSize());
 
     // Map-Referenz festhalten, damit Collapse die Instanz korrekt aufräumt
@@ -367,6 +453,36 @@
       try { host._leafletMap.remove(); } catch { /* ignore */ }
       host._leafletMap = null;
     }
+  }
+
+  function collapseCard(article) {
+    article.classList.remove('is-open');
+    article.setAttribute('aria-expanded', 'false');
+    const chartHost = article.querySelector('.chart-host');
+    disposeTripChart(article);
+    chartHost.classList.add('hidden');
+    chartHost.innerHTML = '';
+    const mapHost = article.querySelector('.map-host');
+    if (mapHost) {
+      disposeTripMap(article);
+      mapHost.classList.add('hidden');
+      mapHost.classList.remove('has-map');
+      mapHost.innerHTML = '';
+    }
+  }
+
+  function expandCard(article) {
+    article.classList.add('is-open');
+    article.setAttribute('aria-expanded', 'true');
+    // Chart zuerst (Hauptinhalt), Map asynchron daneben — die beiden
+    // fetches sind unabhängig, also nicht awaiten.
+    renderTripChart(article, article.dataset.tripId);
+    renderTripMap(article, article.dataset.tripId);
+  }
+
+  function toggleCard(article) {
+    if (article.classList.contains('is-open')) collapseCard(article);
+    else expandCard(article);
   }
 
   function bindCardClicks() {
@@ -386,23 +502,15 @@
           downInProtected = false;
           return;
         }
-        const chartHost = article.querySelector('.chart-host');
-        if (!chartHost.classList.contains('hidden') && chartHost.children.length > 0) {
-          // Collapse: Chart + Map ausblenden, Map-Instanz freigeben.
-          chartHost.classList.add('hidden');
-          const mapHost = article.querySelector('.map-host');
-          if (mapHost) {
-            disposeTripMap(article);
-            mapHost.classList.add('hidden');
-            mapHost.classList.remove('has-map');
-            mapHost.innerHTML = '';
-          }
-          return;
+        toggleCard(article);
+      });
+      // Tastatur: Enter/Leertaste auf der fokussierten Karte.
+      article.addEventListener('keydown', (e) => {
+        if (e.target !== article) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggleCard(article);
         }
-        // Chart zuerst (Hauptinhalt), Map asynchron daneben — die beiden
-        // fetches sind unabhängig, also nicht awaiten.
-        renderTripChart(article, article.dataset.tripId);
-        renderTripMap(article, article.dataset.tripId);
       });
     });
   }
@@ -426,8 +534,7 @@
 
   // Filter-Auswahl über Refresh hinweg merken. Bei Custom-Range zusätzlich
   // die ISO-Daten persistieren, damit der gleiche Zeitraum exakt wieder
-  // hergestellt wird (sonst landet man nur auf dem "Eigener Zeitraum"-Chip
-  // ohne tatsaechlich konfigurierte Range).
+  // hergestellt wird.
   const FILTER_STORAGE_KEY = 'epf.history.filter';
   function saveActiveFilter() {
     try {
@@ -448,21 +555,14 @@
     } catch { return; }
     if (!saved || typeof saved.id !== 'string') return;
     const entry = FILTERS.find(f => f.id === saved.id);
-    if (!entry || entry.isCustomToggle) return;
+    if (!entry) return;
     if (entry.id === 'custom') {
       // Custom-Range nur restoren wenn beide Daten valide sind. Sonst auf
-      // den Default-Filter zurueckfallen statt einen halb-konfigurierten
-      // Custom-Chip zu zeigen.
+      // den Default-Filter zurueckfallen.
       const fromMs = parseDateInput(saved.fromIso);
       const toMs = parseDateInput(saved.toIso);
       if (fromMs == null || toMs == null || fromMs > toMs) return;
-      const toExclusive = toMs + 86_400_000;
-      entry.label = fromMs === toMs
-        ? `Eigener Zeitraum: ${formatLabelDate(fromMs)}`
-        : `Eigener Zeitraum: ${formatLabelDate(fromMs)} – ${formatLabelDate(toMs)}`;
-      entry.range = () => [fromMs, toExclusive];
-      entry._fromIso = saved.fromIso;
-      entry._toIso = saved.toIso;
+      applyCustomEntry(entry, fromMs, toMs, saved.fromIso, saved.toIso);
     }
     activeFilter = entry;
   }
@@ -496,10 +596,8 @@
     if (!host) return;
     host.innerHTML = FILTERS.map(f => {
       const active = f.id === activeFilter.id;
-      const cls = active
-        ? 'bg-[var(--color-brand-teal)] text-black'
-        : 'bg-[var(--color-surface-2)] text-[var(--color-on-surface-dim)] hover:text-white';
-      return `<button data-filter="${f.id}" class="filter-chip text-xs px-3 py-1 rounded-full ${cls}">${f.label}</button>`;
+      const icon = f.isCustomToggle ? svg('calendar') : '';
+      return `<button type="button" data-filter="${f.id}" class="filter-chip chip" aria-pressed="${active}">${icon}${f.label}</button>`;
     }).join('');
     host.querySelectorAll('.filter-chip').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -530,14 +628,25 @@
     if (!m) return null;
     return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
   }
+  // FILTERS-Eintrag in-place mutieren, damit renderChips() den neuen Label
+  // sieht und der Chip aktiv bleibt. "Bis" inklusiv: exklusive Obergrenze ist
+  // Tag+1 um 00:00.
+  function applyCustomEntry(entry, fromMs, toMs, fromIso, toIso) {
+    const toExclusive = toMs + 86_400_000;
+    entry.label = fromMs === toMs
+      ? `Eigener Zeitraum: ${formatLabelDate(fromMs)}`
+      : `Eigener Zeitraum: ${formatLabelDate(fromMs)} – ${formatLabelDate(toMs)}`;
+    entry.range = () => [fromMs, toExclusive];
+    entry._fromIso = fromIso;
+    entry._toIso = toIso;
+  }
   function toggleCustomPanel() {
     const panel = document.getElementById('custom-range-panel');
     if (!panel) return;
     panel.classList.toggle('hidden');
     if (!panel.classList.contains('hidden')) {
       // Defaults: Wenn schon ein Custom-Filter aktiv ist, dessen Werte zeigen;
-      // sonst die heutige Range vorausfüllen, damit der User nur ein Datum
-      // antippen muss.
+      // sonst die heutige Range vorausfüllen.
       const from = document.getElementById('custom-range-from');
       const to = document.getElementById('custom-range-to');
       if (activeFilter.id === 'custom' && activeFilter._fromIso && activeFilter._toIso) {
@@ -576,19 +685,8 @@
         return;
       }
       err.classList.add('hidden');
-      // "Bis" inklusiv: exklusive Obergrenze ist Tag+1 um 00:00.
-      const toExclusive = toMs + 86_400_000;
-      // Label: Einzeltag kompakt, sonst "dd.mm.yyyy – dd.mm.yyyy".
-      const label = fromMs === toMs
-        ? `Eigener Zeitraum: ${formatLabelDate(fromMs)}`
-        : `Eigener Zeitraum: ${formatLabelDate(fromMs)} – ${formatLabelDate(toMs)}`;
-      // FILTERS-Eintrag in-place mutieren, damit renderChips() den neuen Label
-      // sieht und der Chip aktiv bleibt.
       const customEntry = FILTERS.find(f => f.id === 'custom');
-      customEntry.label = label;
-      customEntry.range = () => [fromMs, toExclusive];
-      customEntry._fromIso = fromEl.value;
-      customEntry._toIso = toEl.value;
+      applyCustomEntry(customEntry, fromMs, toMs, fromEl.value, toEl.value);
       activeFilter = customEntry;
       saveActiveFilter();
       hideCustomPanel();
@@ -614,9 +712,56 @@
     if (el) el.textContent = text || '';
   }
 
+  // ---------- Summen-Kacheln ----------
+  function aggTile(accent, iconKey, label, valueHtml, caption) {
+    return `
+      <div class="card stat-tile" data-accent="${accent}">
+        <span class="label">${svg(iconKey)} ${label}</span>
+        <div class="stat-value">${valueHtml}</div>
+        <div class="stat-caption">${caption || '&nbsp;'}</div>
+      </div>`;
+  }
+  function renderAggregates(trips) {
+    if (!aggHost) return;
+    // Aggregat für Quick-Glance: Anzahl + Summenstrecke + Gesamt-Fahrzeit +
+    // Gesamt-Energie (+ Ø Verbrauch, wenn Strecke > 0).
+    const totals = trips.reduce((acc, t) => {
+      acc.km += t.distance_km || 0;
+      acc.s += t.duration_s || 0;
+      acc.wh += t.energy_wh || 0;
+      acc.max = Math.max(acc.max, t.max_speed_kmh || 0);
+      return acc;
+    }, { km: 0, s: 0, wh: 0, max: 0 });
+    const h = Math.floor(totals.s / 3600);
+    const m = Math.floor((totals.s % 3600) / 60);
+    const timeHtml = h > 0 ? `${h}<small>h</small> ${m}<small>min</small>` : `${m}<small>min</small>`;
+    const energyHtml = totals.wh >= 1000
+      ? `${num(totals.wh / 1000, 1)}<small>kWh</small>`
+      : `${num(totals.wh, 0)}<small>Wh</small>`;
+    const perKm = totals.km > 0 ? `Ø ${num(totals.wh / totals.km, 1)} Wh/km` : '';
+    const avgKm = trips.length ? `Ø ${num(totals.km / trips.length, 1)} km pro Fahrt` : '';
+    aggHost.innerHTML =
+      aggTile('teal',    'hash',  'Fahrten',  `${num(trips.length)}`, totals.max ? `Spitze ${num(totals.max, 1)} km/h` : '') +
+      aggTile('teal',    'route', 'Strecke',  `${num(totals.km, 1)}<small>km</small>`, avgKm) +
+      aggTile('amber',   'clock', 'Fahrzeit', timeHtml, '') +
+      aggTile('magenta', 'zap',   'Energie',  energyHtml, perKm);
+    aggHost.hidden = false;
+
+  }
+
+  // Statuszeile oben rechts: welcher Zeitraum gerade angezeigt wird.
+  function rangeLabel() {
+    const range = activeFilter.range();
+    if (!range) return 'Alle Fahrten';
+    const from = formatLabelDate(range[0]);
+    const to = formatLabelDate(Math.min(range[1], Date.now()) - 1);
+    return from === to ? from : `${from} – ${to}`;
+  }
+
   async function load() {
     setStatus('Lade…');
     emptyMsg.classList.add('hidden');
+    list.querySelectorAll('article[data-trip-id]').forEach(a => { disposeTripChart(a); disposeTripMap(a); });
     list.innerHTML = '';
     const range = activeFilter.range();
     const url = range
@@ -627,33 +772,19 @@
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const { trips } = await r.json();
       if (!trips || trips.length === 0) {
+        if (aggHost) aggHost.hidden = true;
         emptyMsg.classList.remove('hidden');
-        setStatus('0 Fahrten');
+        setStatus(rangeLabel());
         return;
       }
-      list.innerHTML = trips.map(cardHtml).join('');
+      list.innerHTML = groupedHtml(trips);
       bindCardClicks();
-      // Aggregat-Status für Quick-Glance: Anzahl + Summenstrecke + Gesamt-
-      // Fahrzeit + Gesamt-Energie. Wird oben rechts in der Filter-Leiste
-      // dargestellt; bei schmalem Viewport bricht's um.
-      const totals = trips.reduce((acc, t) => {
-        acc.km += t.distance_km || 0;
-        acc.s += t.duration_s || 0;
-        acc.wh += t.energy_wh || 0;
-        return acc;
-      }, { km: 0, s: 0, wh: 0 });
-      const h = Math.floor(totals.s / 3600);
-      const m = Math.floor((totals.s % 3600) / 60);
-      const time = h > 0 ? `${h} h ${m} min` : `${m} min`;
-      const energy = totals.wh >= 1000
-        ? `${(totals.wh / 1000).toFixed(1)} kWh`
-        : `${totals.wh.toFixed(0)} Wh`;
-      setStatus(
-        `${trips.length} Fahrten · ${totals.km.toFixed(1)} km · ${time} · ${energy}`
-      );
+      renderAggregates(trips);
+      setStatus(rangeLabel());
     } catch (err) {
       console.error(err);
-      list.innerHTML = '<div class="text-red-400">Fehler beim Laden.</div>';
+      if (aggHost) aggHost.hidden = true;
+      list.innerHTML = '<div class="card notice notice-error">Fehler beim Laden der Fahrten. Bitte Seite neu laden.</div>';
       setStatus('Fehler');
     }
   }
