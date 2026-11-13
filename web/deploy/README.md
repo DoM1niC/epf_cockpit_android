@@ -120,6 +120,29 @@ Im Browser (Dashboard + OBS-Widget):
 
 ## Updates ausrollen
 
+### Per Skript vom Entwickler-Rechner (empfohlen)
+
+```bash
+web/deploy/deploy.sh --dry-run   # zeigt neue (+), geänderte (~), entfernte (-) Dateien
+web/deploy/deploy.sh             # baut CSS, überträgt, startet neu, prüft /healthz
+```
+
+Standardziel ist `webapps:/opt/epf-cockpit-web` (SSH-Alias aus `~/.ssh/config`),
+überschreibbar per `DEPLOY_HOST`, `DEPLOY_DIR`, `DEPLOY_SERVICE`, `KEEP_BACKUPS`.
+
+- Vor jedem Deploy landen ein Code-Snapshot und ein konsistentes SQLite-Backup
+  (`sqlite3 .backup`, WAL-sicher) in `$DEPLOY_DIR/.backups/` — die letzten 5
+  werden behalten.
+- `data/`, `.env` und `node_modules/` auf dem Server werden nie überschrieben.
+- `npm ci --omit=dev` läuft nur, wenn sich `package-lock.json` geändert hat —
+  und zwar mit der Node-Binary aus `ExecStart` der systemd-Unit. Wichtig, wenn
+  im SSH-PATH eine andere Node (z.B. nvm) vorne steht: sonst baut
+  `better-sqlite3` gegen die falsche ABI und der Service startet nicht.
+- Antwortet `/healthz` nach dem Neustart nicht, rollt das Skript automatisch
+  auf den Snapshot (Code + alte `node_modules`) zurück.
+
+### Manuell auf dem Server (Git-Checkout)
+
 ```bash
 cd /opt/epf-cockpit-src
 sudo -u root git pull --ff-only
