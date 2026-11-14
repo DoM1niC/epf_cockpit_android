@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Quick-Tile-Icon „Licht“: Scheinwerfer mit Lichtstrahlen. Weiße Silhouette auf
+  Transparent, 24dp — SystemUI färbt das Icon je nach Tile-Zustand selbst ein.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Lampenkörper (Halbkreis, flache Seite rechts) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M11,5 A7,7 0 0,0 11,19 Z" />
+    <!-- Lichtstrahlen -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M13.5,7.2 L20,5.2 L20.6,7.1 L14.1,9.1 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14,11 H21 V13 H14 Z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M14.1,14.9 L20.6,16.9 L20,18.8 L13.5,16.8 Z" />
+</vector>

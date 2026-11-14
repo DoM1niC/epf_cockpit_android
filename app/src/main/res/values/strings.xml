@@ -46,4 +46,5 @@
     <string name="widget_unlock_label">E-Scooter Steuerung</string>
     <string name="widget_unlock_description">Entsperren + Stand-Stop/Kick-Start umschalten</string>
     <string name="tile_unlock_label">E-Scooter entsperren</string>
+    <string name="tile_light_label">E-Scooter Licht</string>
 </resources>

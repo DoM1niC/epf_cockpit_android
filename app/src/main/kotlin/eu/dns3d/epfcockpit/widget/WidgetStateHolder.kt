@@ -16,6 +16,13 @@ object WidgetStateHolder {
         private set
     @Volatile var rideModeStand: Boolean = true
         private set
+    /** Frontlicht; null = unbekannt (getrennt / noch keine Telemetrie). */
+    @Volatile var lightOn: Boolean? = null
+        private set
+
+    fun updateLight(lightOn: Boolean?) {
+        this.lightOn = lightOn
+    }
 
     fun update(
         connected: Boolean,

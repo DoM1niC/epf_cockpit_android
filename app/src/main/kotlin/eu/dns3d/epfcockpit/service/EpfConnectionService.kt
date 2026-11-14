@@ -21,6 +21,7 @@ import eu.dns3d.epfcockpit.ble.ReconnectStatus
 import eu.dns3d.epfcockpit.ble.Telemetry
 import eu.dns3d.epfcockpit.data.LocationCollector
 import eu.dns3d.epfcockpit.data.SettingsStore
+import eu.dns3d.epfcockpit.widget.LightTileService
 import eu.dns3d.epfcockpit.widget.UnlockTileService
 import eu.dns3d.epfcockpit.widget.UnlockWidgetProvider
 import eu.dns3d.epfcockpit.widget.WidgetStateHolder
@@ -122,7 +123,16 @@ class EpfConnectionService : Service() {
                         rideModeStand = s.rideModeStand,
                     )
                     UnlockTileService.requestRefresh(this@EpfConnectionService)
+                    // Die Licht-Kachel hängt auch an Verbindung + Park-Zustand.
+                    LightTileService.requestRefresh(this@EpfConnectionService)
                 }
+        }
+        // Licht-Zustand für die Licht-Kachel (eigener Collector: combine oben ist voll).
+        scope.launch {
+            ble.lightOn.collect { on ->
+                WidgetStateHolder.updateLight(on)
+                LightTileService.requestRefresh(this@EpfConnectionService)
+            }
         }
     }
 
@@ -185,6 +195,10 @@ class EpfConnectionService : Service() {
                     ble.setRideMode(next)
                     scope.launch { settings.setRideModeStand(next) }
                 }
+            }
+            ACTION_TOGGLE_LIGHT -> handleAction {
+                // Nur entsperrt schaltbar — geparkt ignoriert der Controller das Licht.
+                if (ble.parkingDisplay.value == false) ble.setLight(!(ble.lightOn.value ?: false))
             }
             ACTION_CONNECT -> {
                 NotificationManagerCompat.from(this).cancel(ReconnectHintNotifier.HINT_ID)
@@ -359,6 +373,8 @@ class EpfConnectionService : Service() {
         const val ACTION_TOGGLE_PARK = "eu.dns3d.epfcockpit.action.TOGGLE_PARK"
         /** Widget-Action: Stand-Stop ↔ Kick-Start umschalten. */
         const val ACTION_TOGGLE_RIDE_MODE = "eu.dns3d.epfcockpit.action.TOGGLE_RIDE_MODE"
+        /** Quick-Tile-Action: Frontlicht umschalten (nur entsperrt wirksam). */
+        const val ACTION_TOGGLE_LIGHT = "eu.dns3d.epfcockpit.action.TOGGLE_LIGHT"
         /** Widget/Tile/Notification: nur verbinden (kein Befehl). */
         const val ACTION_CONNECT = "eu.dns3d.epfcockpit.action.CONNECT"
         /** Notification: trennen und den Roller für andere Apps freigeben. */

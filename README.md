@@ -156,6 +156,8 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
 - **Quick-Tile** in den Schnelleinstellungen: 1-Klick Entsperren/Sperren.
   Status (Verbunden? Geparkt?) wird live vom FGS gepusht, Untertext zeigt
   "Entsperren" / "Sperren" / "Verbinden".
+- **Quick-Tile „E-Scooter Licht“**: Frontlicht ein/aus (geparkt ausgegraut,
+  getrennt verbindet ein Tipp).
 - **Home-Widget** (3×1) mit zwei Buttons: **Entsperren ↔ Sperren** (Label
   flippt nach Park-Zustand) und **Modus: Stand / Kick** (toggle). Updates
   bei jedem Telemetrie-Frame, also fast live.

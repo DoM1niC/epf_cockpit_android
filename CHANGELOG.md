@@ -7,6 +7,10 @@ Neueste Einträge oben.
 
 ### Neu in der App
 
+- **Schnellzugriff-Kachel „E-Scooter Licht“** — schaltet das Frontlicht direkt
+  aus den Schnelleinstellungen, wie die Kachel zum Entsperren. Geparkt ist sie
+  ausgegraut (dort lässt sich das Licht nicht schalten), getrennt verbindet ein
+  Tipp. Einmalig in den Schnelleinstellungen über „Bearbeiten“ hinzufügen.
 - **Das Licht merkt sich seinen Zustand.** War das Frontlicht an, als du
   geparkt hast, die Verbindung abriss oder der Roller ausgeschaltet wurde, geht
   es beim Entsperren bzw. Wiederverbinden von selbst wieder an. Der Merker ist
