@@ -12,7 +12,8 @@
     "build:css": "tailwindcss -i public/css/tailwind.css -o public/dist/app.css --minify",
     "build:vendor": "node scripts/copy-vendor.js",
     "build": "npm run build:vendor && npm run build:css",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "DB_PATH=:memory: node --test test/"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

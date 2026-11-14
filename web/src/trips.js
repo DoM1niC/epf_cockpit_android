@@ -1,11 +1,16 @@
 // trips.js — trip lifecycle state.
-// The Android app may emit trip_start / trip_end as hints, but we keep
-// our own current-trip pointer so telemetry inserts can always be tagged
-// with a trip_id (or null when no trip is active).
+//
+// Ablauf aus Sicht der App:
+//   trip_start   sobald die App eine Fahrt-Zeile angelegt hat (und erneut nach
+//                jedem WebSocket-Reconnect, solange die Fahrt läuft). Ab dann
+//                werden Telemetrie und Live-Waypoints dieser Fahrt zugeordnet.
+//   trip_end     self-contained Abschluss (Stammdaten + alle Waypoints). Wird
+//                auch für den Backfill alter Fahrten benutzt.
+//   trip_cancel  die Fahrt wurde verworfen (nie losgefahren / < 10 m).
+//
+// trip_start ist optional: ältere App-Versionen schicken nur trip_end.
 
-import {
-  startTrip, finalizeTripTx, linkTelemetryToTrip, insertTripLocations
-} from './db.js';
+import { startTrip, finalizeTripTx, cancelTripTx } from './db.js';
 
 let currentTripId = null;
 
@@ -13,54 +18,56 @@ export function getCurrentTripId() {
   return currentTripId;
 }
 
-export function handleTripStart({ tripId, ts, scooterName }) {
-  if (!tripId) return;
-  currentTripId = tripId;
-  startTrip({
-    id: tripId,
-    startedAt: ts ?? Date.now(),
-    scooterName: scooterName ?? null
-  });
+/** Nur für Tests. */
+export function resetCurrentTrip() {
+  currentTripId = null;
 }
 
+const isTripId = (v) => typeof v === 'string' && v.length > 0 && v.length <= 128;
+const numOrNull = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+export function handleTripStart({ tripId, ts, scooterName }) {
+  if (!isTripId(tripId)) return false;
+  currentTripId = tripId;
+  // INSERT OR IGNORE — ein wiederholtes trip_start (Reconnect) ist harmlos.
+  startTrip({
+    id: tripId,
+    startedAt: numOrNull(ts) ?? Date.now(),
+    scooterName: scooterName ?? null
+  });
+  return true;
+}
+
+/**
+ * Fahrt abschließen. Liefert die Trip-ID, wenn alles (Stammdaten,
+ * Telemetrie-Zuordnung, Waypoints) in der DB steht — nur dann darf der
+ * Aufrufer ein trip_ack schicken. Wirft bei DB-Fehlern.
+ */
 export function handleTripEnd(payload, fallbackScooterName = null) {
   const id = payload.tripId ?? currentTripId;
-  if (!id) return;
-  // Insert-or-ignore so trip_end is self-contained — the client no longer
-  // needs to send trip_start first. This is robust against the very common
-  // case where a short trip is finalized in one go without ever streaming a
-  // separate trip_start (e.g. when the app pushes everything from
-  // TripCoordinator.finalizeAndClear).
-  startTrip({
-    id,
-    startedAt: payload.startedAt ?? payload.ts ?? Date.now(),
-    scooterName: payload.scooterAddress ?? fallbackScooterName
-  });
-  const endedAt = payload.ts ?? Date.now();
-  const startedAt = payload.startedAt ?? endedAt;
+  if (!isTripId(id)) return null;
+  const endedAt = numOrNull(payload.ts) ?? Date.now();
+  // startedAt aus dem trip_end gewinnt über das trip_start: die App meldet
+  // dort den Moment des Losfahrens, nicht den des Verbindens.
+  const startedAt = numOrNull(payload.startedAt);
   finalizeTripTx({
     id,
+    startedAt: startedAt != null ? Math.min(startedAt, endedAt) : null,
     endedAt,
-    distanceKm: payload.distanceKm ?? null,
-    energyWh: payload.energyWh ?? null,
-    maxSpeedKmh: payload.maxSpeedKmh ?? null,
-    avgSpeedKmh: payload.avgSpeedKmh ?? null,
-    durationS: payload.durationS ?? null
-  });
-  // Retroaktiv alle Telemetry-Frames die zwischen startedAt und endedAt
-  // eingelaufen sind aber noch keinen trip_id haben, an diese Fahrt
-  // hängen. Damit die Detail-Ansicht "no samples" nicht mehr zeigt für
-  // Fahrten die live gestreamt wurden.
-  linkTelemetryToTrip({ tripId: id, startedAt, endedAt });
-  // GPS-Waypoints-Backfill aus trip_end. Idempotent via PK-Conflict, doppelt
-  // gestreamte Punkte (live + backfill) gehen also nicht verloren und legen
-  // die DB nicht lahm.
-  if (Array.isArray(payload.locations) && payload.locations.length > 0) {
-    try {
-      insertTripLocations(id, payload.locations);
-    } catch (err) {
-      console.warn('[trips] insertTripLocations failed:', err.message);
-    }
-  }
+    scooterName: payload.scooterAddress ?? fallbackScooterName,
+    distanceKm: numOrNull(payload.distanceKm),
+    energyWh: numOrNull(payload.energyWh),
+    maxSpeedKmh: numOrNull(payload.maxSpeedKmh),
+    avgSpeedKmh: numOrNull(payload.avgSpeedKmh),
+    durationS: numOrNull(payload.durationS)
+  }, Array.isArray(payload.locations) ? payload.locations : null);
   if (id === currentTripId) currentTripId = null;
+  return id;
+}
+
+/** Nie finalisierte Fahrt verwerfen. Finalisierte Fahrten bleiben erhalten. */
+export function handleTripCancel({ tripId }) {
+  if (!isTripId(tripId)) return false;
+  if (tripId === currentTripId) currentTripId = null;
+  return cancelTripTx(tripId);
 }

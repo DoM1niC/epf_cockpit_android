@@ -53,6 +53,7 @@ Persistente SQLite-DB landet im bind-gemounteten `./data/`. Details
 |-----------|--------------------|------------------------------------|
 | `PORT`    | `8787`             | HTTP + WebSocket port              |
 | `DB_PATH` | `./data/epf.db`    | SQLite file (WAL mode is enabled)  |
+| `TELEMETRY_RETENTION_DAYS` | `30` | Raw telemetry that belongs to **no trip** (idle, charging) is deleted after this many days. `0` keeps everything. Trip telemetry is never deleted. |
 
 ## Pointing the Android app at it
 
@@ -69,9 +70,19 @@ The contract is JSON-per-text-frame:
 {"type":"hello","scooterName":"HW_EF043840","scooterAddress":"AA:BB:..","authenticated":true,"app":"epf_cockpit_android","appVersion":"0.1.0"}
 {"type":"telemetry","ts":1700000000000,"speedKmh":12.3,"batteryPercent":85,"voltageV":36.2,"currentA":4.1,"powerW":148,"controllerTempC":32,"tripKm":1.23,"totalKm":412.5,"parking":false,"rideModeStand":false,"lightOn":true,"motorTempC":29}
 {"type":"state","connected":true,"authenticated":true,"scooterName":"HW_EF043840"}
-{"type":"trip_start","ts":1700000000000,"tripId":"<uuid-v4>"}
-{"type":"trip_end","tripId":"<uuid-v4>","ts":1700000300000,"distanceKm":1.5,"energyWh":42.3,"durationS":300,"maxSpeedKmh":22.1,"avgSpeedKmh":18.0}
+{"type":"trip_start","ts":1700000000000,"tripId":"local-12"}
+{"type":"location","tripId":"local-12","ts":1700000001000,"lat":50.1,"lon":8.6,"accuracy_m":4.0,"speed_mps":5.2}
+{"type":"trip_end","tripId":"local-12","startedAt":1700000000000,"ts":1700000300000,"distanceKm":1.5,"energyWh":42.3,"durationS":300,"maxSpeedKmh":22.1,"avgSpeedKmh":18.0,"locations":[{"ts":1700000001000,"lat":50.1,"lon":8.6}]}
+{"type":"trip_cancel","tripId":"local-12"}
 ```
+
+The server answers every successfully stored `trip_end` on the ingest socket
+with `{"type":"trip_ack","tripId":"local-12"}`; the app then stops re-sending
+that trip. `trip_start` is optional (older app versions only send `trip_end`),
+`trip_cancel` drops a trip that was started but never finalized. Unfinished
+trips older than 24 h are removed automatically.
+
+Run the backend tests with `npm test` (in-memory SQLite).
 
 Browsers consume the same shape on `/ws/live`.
 

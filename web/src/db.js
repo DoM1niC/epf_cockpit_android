@@ -45,6 +45,10 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_telemetry_trip ON telemetry(trip_id, ts);
   CREATE INDEX IF NOT EXISTS idx_telemetry_ts ON telemetry(ts);
+  -- Partieller Index für "Telemetrie ohne Fahrt": Retention und das
+  -- nachträgliche Zuordnen beim trip_end müssen sonst alle alten,
+  -- längst zugeordneten Zeilen mit anfassen.
+  CREATE INDEX IF NOT EXISTS idx_telemetry_unlinked_ts ON telemetry(ts) WHERE trip_id IS NULL;
 
   CREATE TABLE IF NOT EXISTS trip_locations (
     trip_id    TEXT    NOT NULL,
@@ -87,7 +91,8 @@ const stmts = {
 
   finalizeTrip: db.prepare(`
     UPDATE trips
-       SET ended_at = @endedAt,
+       SET started_at = COALESCE(@startedAt, started_at),
+           ended_at = @endedAt,
            distance_km = @distanceKm,
            energy_wh = @energyWh,
            max_speed_kmh = @maxSpeedKmh,
@@ -138,6 +143,68 @@ const stmts = {
        SET trip_id = @tripId
      WHERE trip_id IS NULL
        AND ts BETWEEN @startedAt AND @endedAt
+  `),
+
+  // Gegenstück zum Linking: Frames, die live mit der trip_id getaggt wurden,
+  // aber außerhalb des finalen Fahrt-Fensters liegen (Standzeit vor dem
+  // Losfahren / nach dem Anhalten), wieder lösen.
+  unlinkTelemetryOutside: db.prepare(`
+    UPDATE telemetry
+       SET trip_id = NULL
+     WHERE trip_id = @tripId
+       AND (ts < @startedAt OR ts > @endedAt)
+  `),
+  unlinkTelemetryOfTrip: db.prepare(`
+    UPDATE telemetry SET trip_id = NULL WHERE trip_id = ?
+  `),
+
+  // Nie finalisierte Fahrt verwerfen (trip_cancel bzw. Aufräumen verwaister
+  // Einträge). Finalisierte Fahrten bleiben unangetastet.
+  deleteUnfinishedTrip: db.prepare(`
+    DELETE FROM trips WHERE id = ? AND ended_at IS NULL
+  `),
+  listStaleUnfinishedTrips: db.prepare(`
+    SELECT id FROM trips WHERE ended_at IS NULL AND started_at < ?
+  `),
+
+  // Retention: ältere Roh-Telemetrie ohne Fahrt-Zuordnung in Häppchen löschen,
+  // damit ein großer Erstlauf den Event-Loop nicht sekundenlang blockiert.
+  pruneUnlinkedTelemetry: db.prepare(`
+    DELETE FROM telemetry
+     WHERE rowid IN (
+       SELECT rowid FROM telemetry
+        WHERE ts < @cutoff AND trip_id IS NULL
+        LIMIT @limit
+     )
+  `),
+
+  countTelemetryInRange: db.prepare(`
+    SELECT COUNT(*) AS c FROM telemetry WHERE ts BETWEEN ? AND ?
+  `),
+  telemetryInRange: db.prepare(`
+    SELECT ts,
+           speed_kmh        AS speedKmh,
+           power_w          AS powerW,
+           battery_percent  AS batteryPercent,
+           voltage_v        AS voltageV,
+           current_a        AS currentA
+      FROM telemetry
+     WHERE ts BETWEEN ? AND ?
+     ORDER BY ts ASC
+  `),
+  // Bucket-Avg-Downsample. Bucket-Center als ts zurueckgeben, damit der
+  // Chart die x-Werte zentriert ueber dem Bucket sieht.
+  telemetryInRangeBucketed: db.prepare(`
+    SELECT (CAST(ts/@bucketMs AS INTEGER) * @bucketMs + @bucketMs/2) AS ts,
+           AVG(speed_kmh)        AS speedKmh,
+           AVG(power_w)          AS powerW,
+           AVG(battery_percent)  AS batteryPercent,
+           AVG(voltage_v)        AS voltageV,
+           AVG(current_a)        AS currentA
+      FROM telemetry
+     WHERE ts BETWEEN @from AND @to
+     GROUP BY CAST(ts/@bucketMs AS INTEGER)
+     ORDER BY ts ASC
   `),
 
   // GPS-Waypoints. INSERT OR IGNORE damit der Backfill aus trip_end keine
@@ -196,10 +263,58 @@ export function startTrip({ id, startedAt, scooterName }) {
   stmts.insertTrip.run(id, startedAt, scooterName ?? null);
 }
 
-// trip_end + (implicit) any final telemetry catch-up wrapped in a tx.
-export const finalizeTripTx = db.transaction((finalRow) => {
-  stmts.finalizeTrip.run(finalRow);
+// trip_end komplett in einer Transaktion: Stammdaten, Telemetrie-Zuordnung
+// auf das finale Fahrt-Fenster und der GPS-Backfill. Entweder alles oder
+// nichts — nur dann darf der Server die Fahrt per trip_ack quittieren.
+export const finalizeTripTx = db.transaction((finalRow, locations) => {
+  stmts.insertTrip.run(finalRow.id, finalRow.startedAt ?? finalRow.endedAt, finalRow.scooterName ?? null);
+  stmts.finalizeTrip.run({
+    id: finalRow.id,
+    startedAt: finalRow.startedAt ?? null,
+    endedAt: finalRow.endedAt,
+    distanceKm: finalRow.distanceKm ?? null,
+    energyWh: finalRow.energyWh ?? null,
+    maxSpeedKmh: finalRow.maxSpeedKmh ?? null,
+    avgSpeedKmh: finalRow.avgSpeedKmh ?? null,
+    durationS: finalRow.durationS ?? null
+  });
+  const win = {
+    tripId: finalRow.id,
+    startedAt: finalRow.startedAt ?? finalRow.endedAt,
+    endedAt: finalRow.endedAt
+  };
+  stmts.unlinkTelemetryOutside.run(win);
+  stmts.linkTelemetryToTrip.run(win);
+  if (Array.isArray(locations)) insertLocationRows(finalRow.id, locations);
 });
+
+/**
+ * Nie finalisierte Fahrt verwerfen (App meldet: nie losgefahren / < 10 m).
+ * Liefert true, wenn eine Zeile gelöscht wurde. Waypoints gehen per Cascade.
+ */
+export const cancelTripTx = db.transaction((id) => {
+  const deleted = stmts.deleteUnfinishedTrip.run(id).changes > 0;
+  if (deleted) stmts.unlinkTelemetryOfTrip.run(id);
+  return deleted;
+});
+
+/**
+ * Verwaiste, nie finalisierte Fahrten entfernen (App wurde mitten in der
+ * Fahrt beendet oder das trip_cancel ging im Funkloch verloren).
+ */
+export function pruneStaleUnfinishedTrips(olderThanMs, keepId = null) {
+  let n = 0;
+  for (const { id } of stmts.listStaleUnfinishedTrips.all(olderThanMs)) {
+    if (id === keepId) continue;
+    if (cancelTripTx(id)) n++;
+  }
+  return n;
+}
+
+/** Ein Häppchen alter Telemetrie ohne Fahrt-Zuordnung löschen. Liefert die Anzahl. */
+export function pruneUnlinkedTelemetryBatch(cutoff, limit = 20000) {
+  return stmts.pruneUnlinkedTelemetry.run({ cutoff, limit }).changes;
+}
 
 export function listTrips(limit = 100) {
   return stmts.listTrips.all(Math.max(1, Math.min(1000, limit | 0)));
@@ -220,10 +335,6 @@ export function getTripSamples(id) {
   return stmts.getTripSamples.all(id);
 }
 
-export function linkTelemetryToTrip(args) {
-  return stmts.linkTelemetryToTrip.run(args);
-}
-
 export function insertLocation(row) {
   stmts.insertLocation.run({
     tripId:    row.tripId,
@@ -242,9 +353,10 @@ export function getTripLocations(tripId) {
 // Batch-Insert für den trip_end-Backfill. In einer Transaction, weil das bei
 // längeren Fahrten schnell ein paar hundert Punkte sind und Einzel-Inserts
 // hier WAL-Schreibverkehr unnötig vervielfachen.
-export const insertTripLocationsTx = db.transaction((tripId, locations) => {
+function insertLocationRows(tripId, locations) {
   for (const loc of locations) {
-    if (loc == null || loc.lat == null || loc.lon == null || loc.ts == null) continue;
+    if (loc == null || typeof loc.lat !== 'number' || typeof loc.lon !== 'number'
+        || typeof loc.ts !== 'number') continue;
     stmts.insertLocation.run({
       tripId,
       ts:        loc.ts,
@@ -254,7 +366,9 @@ export const insertTripLocationsTx = db.transaction((tripId, locations) => {
       speedMps:  loc.speed_mps  ?? loc.speedMps  ?? null,
     });
   }
-});
+}
+
+export const insertTripLocationsTx = db.transaction(insertLocationRows);
 
 export function insertTripLocations(tripId, locations) {
   if (!tripId || !Array.isArray(locations) || locations.length === 0) return;
@@ -286,36 +400,9 @@ export function upsertScooterName(address, name, updatedAt = Date.now()) {
  * auch grosse Zeitraeume (7d ~= 3M Rows roh) ohne Browser-OOM.
  */
 export function getTelemetryInRange(from, to, max) {
-  const count = db.prepare(
-    `SELECT COUNT(*) AS c FROM telemetry WHERE ts BETWEEN ? AND ?`
-  ).get(from, to).c;
+  const count = stmts.countTelemetryInRange.get(from, to).c;
   if (count === 0) return [];
-  if (count <= max) {
-    return db.prepare(`
-      SELECT ts,
-             speed_kmh        AS speedKmh,
-             power_w          AS powerW,
-             battery_percent  AS batteryPercent,
-             voltage_v        AS voltageV,
-             current_a        AS currentA
-        FROM telemetry
-       WHERE ts BETWEEN ? AND ?
-       ORDER BY ts ASC
-    `).all(from, to);
-  }
-  // Bucket-Avg-Downsample. Bucket-Center als ts zurueckgeben, damit der
-  // Chart die x-Werte zentriert ueber dem Bucket sieht.
+  if (count <= max) return stmts.telemetryInRange.all(from, to);
   const bucketMs = Math.max(1, Math.ceil((to - from) / max));
-  return db.prepare(`
-    SELECT (CAST(ts/? AS INTEGER) * ? + ?/2) AS ts,
-           AVG(speed_kmh)        AS speedKmh,
-           AVG(power_w)          AS powerW,
-           AVG(battery_percent)  AS batteryPercent,
-           AVG(voltage_v)        AS voltageV,
-           AVG(current_a)        AS currentA
-      FROM telemetry
-     WHERE ts BETWEEN ? AND ?
-     GROUP BY CAST(ts/? AS INTEGER)
-     ORDER BY ts ASC
-  `).all(bucketMs, bucketMs, bucketMs, from, to, bucketMs);
+  return stmts.telemetryInRangeBucketed.all({ bucketMs, from, to });
 }

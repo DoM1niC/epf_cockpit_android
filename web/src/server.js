@@ -10,6 +10,7 @@ import { api } from './routes.js';
 import { scooterNames } from './scooter-names.js';
 import { ingestWss } from './ingest.js';
 import { liveWss } from './broadcast.js';
+import { startMaintenance } from './maintenance.js';
 import {
   checkIngestAuth, checkViewAuth, requireView,
   ingestAuthEnabled, viewAuthEnabled
@@ -110,6 +111,7 @@ server.listen(PORT, BIND, () => {
   console.log(`[epf-cockpit-web] listening on http://${BIND}:${PORT}`);
   console.log(`  ingest auth: ${ingestAuthEnabled ? 'ON (INGEST_TOKEN set)' : 'OFF (open)'}`);
   console.log(`  view auth:   ${viewAuthEnabled   ? 'ON (VIEW_TOKEN set)'   : 'OFF (open)'}`);
+  startMaintenance();
 });
 
 // Graceful shutdown — flushes WAL on exit via the natural Database finalizer.
