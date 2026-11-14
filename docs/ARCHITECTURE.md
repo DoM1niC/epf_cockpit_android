@@ -24,6 +24,8 @@ app/src/main/kotlin/eu/dns3d/epfcockpit/
 │   ├── Telemetry.kt             // Decoder für AF 00 19 01 … Frames
 │   ├── ControlFrames.kt         // Frame-Konstanten + AT-Kommandos
 │   ├── ScooterManager.kt        // BleManager-Subklasse (Nordic)
+│   ├── HeartbeatController.kt   // Init-Burst + 600-ms-Heartbeat + adaptive WakeLock
+│   ├── BleErrors.kt             // GATT-Fehler → UI-Texte
 │   └── BleRepository.kt         // @Singleton, einziger BLE-Entry-Point
 ├── data/
 │   ├── SettingsStore.kt         // DataStore inkl. themeMode + streaming{Url,Token,Enabled}
@@ -160,13 +162,14 @@ meldet. Details + Logmarker: docs/TROUBLESHOOTING.md.
 
 ## Heartbeat-Loop
 
-`BleRepository.startHeartbeat()` startet eine Coroutine, die alle 600 ms
+Der `HeartbeatController` (vom `BleRepository` nach `PinOk` gestartet) startet
+eine Coroutine, die alle 600 ms
 `ControlFrames.PULSE_HEARTBEAT` (`A5 02 FD 5A`) an `lowTx` schreibt. Ohne
 diesen Heartbeat:
 - Pulse Plus sendet keine Telemetry-Notifications
 - Pulse Plus kappt die Connection nach ~30 s mit `GATT CONN TERMINATE PEER USER`
 
-Heartbeat wird in `disconnect()` gestoppt und vor Beginn jeweils neu gestartet,
+Heartbeat wird bei jedem Abriss und in `disconnect()` gestoppt und vor Beginn jeweils neu gestartet,
 sodass kein Doppel-Job läuft.
 
 ## Trip-Recording
@@ -201,7 +204,8 @@ gerade die Settings öffnet). Drei Coroutines auf einem eigenen
    `Triple(url, enabled, token)` → reconnected bei jedem Wechsel.
 2. Forward von `BleRepository.connection` → `state`-JSON-Frames.
 3. Forward von `BleRepository.telemetry` → `telemetry`-JSON-Frames,
-   throttled auf 5 Hz (200 ms min-interval).
+   throttled auf 5 Hz in Fahrt und 1 Hz im Stand.
+4. Empfang von `trip_ack` → `tripAcks`-Flow für den `TripSyncer`.
 
 Reconnect-Loop mit Exponential-Backoff bis 30 s. `CancellationException`
 explizit erlaubt (Job-Cancel ist normal). Status wird als `StateFlow`
@@ -254,9 +258,12 @@ Effekt: `ble.disconnect()` → Heartbeat-Job stoppt → BLE-GATT zu, dann
 `stopSelf()` → Notification weg, dann `exitProcess(0)` → Service-Process
 beendet. Sonst würde der FGS per Default weiterleben.
 
-`TripCoordinator` ist die Antwort auf "wann startet eine Fahrt?" — sobald
-`BleRepository.connection` auf `Connected` springt UND der erste Telemetry-
-Frame eintrifft, wird `startedAt` gesetzt. Finalisiert wird auf jeden
-`Disconnected`/`Failed`-Transition; in Room landet nur was ≥10 m
+`TripCoordinator` ist die Antwort auf "wann startet eine Fahrt?" — mit dem
+ersten Telemetry-Frame nach `Connected` entsteht eine Placeholder-Row (damit
+das GPS schon einen Fix hat), `startedAt` ist aber der Moment des ersten
+Rollens (≥ 1 km/h), `endedAt` der des letzten; die Ø-Geschwindigkeit zählt nur
+Bewegungszeit. Finalisiert wird sofort bei bewusstem Trennen, nach einem
+Abriss erst nach 90 s Gnadenfrist (bzw. sobald keine Reconnect-Episode mehr
+läuft) — ein kurzer Funkabriss teilt die Fahrt nicht. In Room landet nur was ≥10 m
 zurückgelegt hat (sonst wären "App auf, kurz gechecked, wieder zu" als
 Geister-Trips in der Historie).

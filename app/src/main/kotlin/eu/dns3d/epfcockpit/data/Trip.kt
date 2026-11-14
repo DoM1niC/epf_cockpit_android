@@ -1,5 +1,6 @@
 package eu.dns3d.epfcockpit.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -15,4 +16,10 @@ data class Trip(
     val startBatteryPct: Int,
     val endBatteryPct: Int,
     val scooterAddress: String,
+    /**
+     * Zeitpunkt (ms), zu dem der Web-Server diese Fahrt per `trip_ack`
+     * quittiert hat; 0 = noch nicht synchronisiert. Der [TripSyncer] schickt
+     * nur Fahrten mit 0 nach.
+     */
+    @ColumnInfo(defaultValue = "0") val syncedAt: Long = 0,
 )

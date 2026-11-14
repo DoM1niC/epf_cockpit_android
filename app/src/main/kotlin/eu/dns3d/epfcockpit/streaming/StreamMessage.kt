@@ -58,6 +58,13 @@ sealed interface StreamMessage {
         val ts: Long,
     ) : StreamMessage
 
+    /** Fahrt verworfen (nie nennenswert gefahren) — der Server löscht den offenen Eintrag. */
+    @Serializable
+    @SerialName("trip_cancel")
+    data class TripCancel(
+        val tripId: String,
+    ) : StreamMessage
+
     @Serializable
     @SerialName("trip_end")
     data class TripEnd(

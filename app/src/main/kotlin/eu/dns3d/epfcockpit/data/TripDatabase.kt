@@ -5,7 +5,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [Trip::class, TripLocation::class], version = 2, exportSchema = false)
+@Database(entities = [Trip::class, TripLocation::class], version = 3, exportSchema = false)
 abstract class TripDatabase : RoomDatabase() {
     abstract fun tripDao(): TripDao
 
@@ -33,6 +33,13 @@ abstract class TripDatabase : RoomDatabase() {
                     "CREATE INDEX IF NOT EXISTS `index_trip_locations_tripRowId_ts` " +
                         "ON `trip_locations` (`tripRowId`, `ts`)"
                 )
+            }
+        }
+
+        /** v2 → v3: `syncedAt` — Fahrten werden nur noch einmal zum Server geschickt. */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `trips` ADD COLUMN `syncedAt` INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

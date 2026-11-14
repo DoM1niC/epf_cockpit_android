@@ -112,14 +112,18 @@ class LocationCollector @Inject constructor(
         }.onFailure { Log.w(TAG, "registerReceiver failed: ${it.message}") }
         scope.launch {
             // Vier Quellen: trackLocation, trackLocationIdle, aktive Trip-Row-ID,
-            // parking-Flag. distinctUntilChanged auf das errechnete Gate-Tupel,
+            // Park-Zustand. distinctUntilChanged auf das errechnete Gate-Tupel,
             // sodass wir Start/Stop nur fahren wenn sich was Effektives ändert.
             combine(
                 settings.flow,
                 tripCoordinator.activeTripRowId,
-                ble.telemetry,
-            ) { snap, tripRowId, tele ->
-                val parked = tele?.parking == true
+                ble.parkingDisplay,
+            ) { snap, tripRowId, parkDisplay ->
+                // NICHT das Telemetrie-Bit 5: das ist auch im Stand-Stop-Modus
+                // gesetzt — die Fahrt gälte dann als "geparkt" und es würde nie
+                // ein Waypoint gespeichert. parkingDisplay ist der echte
+                // Park-Zustand (Intent-Latch, siehe ParkController).
+                val parked = parkDisplay == true
                 val tripActive = tripRowId != null && !parked
                 val shouldRun = snap.trackLocation && (tripActive || snap.trackLocationIdle)
                 // Im Idle-Modus (kein Trip, oder geparkt) bleibt die Row-ID

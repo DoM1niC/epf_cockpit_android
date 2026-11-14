@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.content.Context
 import android.util.Log
+import eu.dns3d.epfcockpit.BuildConfig
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -145,7 +146,8 @@ class ScooterManager(context: Context) : BleManager(context) {
             Log.w(tag, "writeLowFrame[$label]: lowTx is null (not connected?)")
             return
         }
-        Log.v(tag, "writeLowFrame[$label]: ${frame.toHex()}")
+        // Läuft alle 600 ms (Heartbeat) — Hex-Dump nur im Debug-Build bauen.
+        if (BuildConfig.DEBUG) Log.v(tag, "writeLowFrame[$label]: ${frame.toHex()}")
         writeCharacteristic(
             char, Data(frame),
             android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE,

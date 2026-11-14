@@ -1,5 +1,7 @@
 package eu.dns3d.epfcockpit.ble
 
+import eu.dns3d.epfcockpit.BuildConfig
+
 /**
  * Decoded snapshot of a telemetry frame (type 1) emitted on the low-level RX char.
  *
@@ -44,7 +46,6 @@ data class Telemetry(
      * Low-Byte == [statusByte]. Nur für Logging/Diagnose.
      */
     val statusWord: Int = statusByte,
-    val rawHex: String,
 ) {
     val watts: Float get() = voltage * currentAmps
     val absWatts: Float get() = kotlin.math.abs(watts)
@@ -61,12 +62,12 @@ object TelemetryDecoder {
     /** Returns null if [frame] is not a recognisable telemetry frame. */
     fun decode(frame: ByteArray): Telemetry? {
         if (frame.size < 22) {
-            android.util.Log.d(TAG, "skip: size=${frame.size} < 22 hex=${frame.toHex()}")
+            trace { "skip: size=${frame.size} < 22 hex=${frame.toHex()}" }
             return null
         }
         if (frame[0] != BleConstants.FRAME_HEADER_EPF &&
             frame[0] != BleConstants.FRAME_HEADER_ALT) {
-            android.util.Log.d(TAG, "skip: bad header=0x%02X".format(frame[0]))
+            trace { "skip: bad header=0x%02X".format(frame[0]) }
             return null
         }
         // Frame type 1 is the telemetry payload (per HCI sniff:
@@ -75,7 +76,7 @@ object TelemetryDecoder {
         //   real values with zeros.
         val isTelemetryType = frame.size >= 4 && frame[3].toInt() and 0xFF == 0x01
         if (!isTelemetryType) {
-            android.util.Log.v(TAG, "skip: not type 1 (echo frame) hex=${frame.toHex()}")
+            trace { "skip: not type 1 (echo frame) hex=${frame.toHex()}" }
             return null
         }
         if (!Crc16Modbus.verify(frame)) {
@@ -107,10 +108,23 @@ object TelemetryDecoder {
             // the CRC; shorter frames don't, fall back to 0.
             statusByte = if (frame.size >= 25) u8(22) else 0,
             statusWord = if (frame.size >= 25) u16(21) else 0,
-            rawHex = frame.toHex(),
         ).also { t ->
-            android.util.Log.v(TAG, "telemetry: status=0x%02X parking=%b gear=%d batt=%d%% v=%.1f"
-                .format(t.statusByte, t.parking, t.gear, t.batteryPercent, t.voltage))
+            trace {
+                "telemetry: status=0x%02X parking=%b gear=%d batt=%d%% v=%.1f hex=%s"
+                    .format(t.statusByte, t.parking, t.gear, t.batteryPercent, t.voltage, frame.toHex())
+            }
+        }
+    }
+
+    /**
+     * Pro-Frame-Diagnose. Der Decoder läuft für JEDES Frame, auch stundenlang
+     * bei Display aus — Hex-Dump und String.format dürfen deshalb nur anfallen,
+     * wenn sie jemand lesen will: Debug-Build UND
+     * `adb shell setprop log.tag.TelemetryDecoder VERBOSE`.
+     */
+    private inline fun trace(msg: () -> String) {
+        if (BuildConfig.DEBUG && android.util.Log.isLoggable(TAG, android.util.Log.VERBOSE)) {
+            android.util.Log.v(TAG, msg())
         }
     }
 }

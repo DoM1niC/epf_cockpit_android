@@ -16,9 +16,16 @@ interface TripDao {
     @Query("SELECT * FROM trips WHERE endedAt > 0 ORDER BY endedAt DESC")
     fun observeAll(): Flow<List<Trip>>
 
-    /** One-shot read für den TripSyncer (Backfill an den Web-Server). */
-    @Query("SELECT * FROM trips WHERE endedAt > 0 ORDER BY endedAt ASC")
-    suspend fun getAll(): List<Trip>
+    /** Abgeschlossene Fahrten, die der Web-Server noch nicht quittiert hat. */
+    @Query("SELECT * FROM trips WHERE endedAt > 0 AND syncedAt = 0 ORDER BY endedAt ASC")
+    suspend fun getUnsynced(): List<Trip>
+
+    @Query("UPDATE trips SET syncedAt = :at WHERE id = :id")
+    suspend fun markSynced(id: Long, at: Long)
+
+    /** Anderer Server (URL geändert): alles gilt wieder als nicht synchronisiert. */
+    @Query("UPDATE trips SET syncedAt = 0")
+    suspend fun resetSynced()
 
     @Insert
     suspend fun insert(trip: Trip): Long
@@ -47,6 +54,10 @@ interface TripDao {
 
     @Insert
     suspend fun insertLocation(location: TripLocation): Long
+
+    /** Waypoints außerhalb des Fahrt-Fensters verwerfen (Standzeit vor/nach der Fahrt). */
+    @Query("DELETE FROM trip_locations WHERE tripRowId = :tripRowId AND (ts < :from OR ts > :to)")
+    suspend fun trimLocations(tripRowId: Long, from: Long, to: Long)
 
     @Query("SELECT * FROM trip_locations WHERE tripRowId = :tripRowId ORDER BY ts ASC")
     suspend fun locationsForTrip(tripRowId: Long): List<TripLocation>

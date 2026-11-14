@@ -86,7 +86,7 @@ class SettingsViewModel @Inject constructor(
             streamingEnabled = s.streamingEnabled,
             streamingToken = s.streamingToken.orEmpty(),
             authenticated = (conn as? ConnectionState.Connected)?.authenticated == true,
-            parking = tele?.parking == true,
+            parking = parkDisp == true,
             parkingKnown = parkDisp != null,
             standing = tele != null && tele.speedKmh <= 1.0f,
             tripKm = tele?.tripKm,

@@ -10,19 +10,25 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -52,9 +58,25 @@ class TelemetryStreamer @Inject constructor(
         .connectTimeout(10, TimeUnit.SECONDS)
         .build()
 
+    /**
+     * Schützt [socket]. Die Listener-Callbacks laufen auf OkHttp-Threads und
+     * dürfen nur für den AKTUELLEN Socket wirken: das verspätete onClosed eines
+     * abgelösten Sockets hat sonst den frischen auf null gesetzt und einen
+     * unnötigen Reconnect ausgelöst.
+     */
+    private val socketLock = Any()
     private var socket: WebSocket? = null
     private var socketJob: Job? = null
+
+    // Nur vom Telemetrie-Collector angefasst.
     private var lastSentTelemetryTs: Long = 0L
+    private var lastSentFlags: Triple<Boolean?, Boolean?, Boolean>? = null
+
+    private val _tripAcks = MutableSharedFlow<String>(
+        extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    /** Trip-IDs, deren `trip_end` der Server verarbeitet und quittiert hat. */
+    val tripAcks: SharedFlow<String> = _tripAcks.asSharedFlow()
     // Vom User gesetzter Anzeigename — wird im hello/state-Frame als scooterName
     // mitgeschickt. Null = Dashboard zeigt "E-Scooter" als Fallback. Cached
     // statt suspend-Lookup, weil sendState/sendHello aus dem Listener heraus
@@ -93,19 +115,24 @@ class TelemetryStreamer @Inject constructor(
                 .collect { name ->
                     val changed = cachedFriendlyName != name
                     cachedFriendlyName = name
-                    if (changed && socket != null) sendState(ble.connection.value)
+                    if (changed) sendState(ble.connection.value)
                 }
         }
         // Forward connection-state changes to the server (when socket is open).
         scope.launch {
             ble.connection.collect { c -> sendState(c) }
         }
-        // Forward telemetry, throttled to ~5 Hz.
+        // Forward telemetry: ~5 Hz in Fahrt, ~1 Hz im Stand. Der Server
+        // speichert jedes Frame — im Stand (Laden, Garage) wären 5 Hz reine
+        // Datenmenge. Schaltvorgänge (Park/Licht/Modus) gehen sofort raus.
         scope.launch {
             ble.telemetry.filterNotNull().collect { t ->
                 val now = System.currentTimeMillis()
-                if (now - lastSentTelemetryTs < 200) return@collect
+                val flags = Triple(ble.parkingDisplay.value, ble.lightOn.value, ble.rideModeStand)
+                val minGap = if (t.speedKmh >= MOVING_SPEED_KMH) MOVING_INTERVAL_MS else IDLE_INTERVAL_MS
+                if (flags == lastSentFlags && now - lastSentTelemetryTs < minGap) return@collect
                 lastSentTelemetryTs = now
+                lastSentFlags = flags
                 sendTelemetry(t, now)
             }
         }
@@ -115,13 +142,11 @@ class TelemetryStreamer @Inject constructor(
         var backoffMs = 1_000L
         while (isActive) {
             _status.value = Status.Connecting
-            val opened = openSocket(url, token)
-            if (opened) {
+            val ws = openSocket(url, token)
+            if (ws != null) {
                 backoffMs = 1_000L  // reset on successful open
                 // Wait until the socket dies — the listener flips _status back to Failed.
-                while (isActive && _status.value == Status.Connected) {
-                    delay(500)
-                }
+                _status.first { it != Status.Connected }
             } else {
                 _status.value = Status.Failed
             }
@@ -131,41 +156,60 @@ class TelemetryStreamer @Inject constructor(
         }
     }
 
-    private suspend fun openSocket(url: String, token: String?): Boolean {
-        return try {
+    /** Öffnet einen Socket und wartet kurz auf onOpen. Null bei Fehlschlag. */
+    private suspend fun openSocket(url: String, token: String?): WebSocket? {
+        val ws = try {
             // Prefer Authorization-Header over ?token=…: stays out of nginx
             // access.log $request, and out of OkHttp's URL toString on error.
             val builder = Request.Builder().url(url)
             if (!token.isNullOrBlank()) {
                 builder.header("Authorization", "Bearer $token")
             }
-            val ws = client.newWebSocket(builder.build(), listener)
-            socket = ws
-            // Listener calls _status.value = Connected on onOpen — wait briefly.
-            var waited = 0
-            while (waited < 5_000 && _status.value != Status.Connected) {
-                delay(100); waited += 100
+            // Unter dem Lock, damit onOpen den Socket garantiert schon kennt.
+            synchronized(socketLock) {
+                client.newWebSocket(builder.build(), listener).also { socket = it }
             }
-            _status.value == Status.Connected
         } catch (t: Throwable) {
             Log.w(TAG, "openSocket failed: ${t.message}")
-            false
+            return null
         }
+        val opened = withTimeoutOrNull(OPEN_TIMEOUT_MS) { _status.first { it != Status.Connecting } }
+        if (opened == Status.Connected) return ws
+        // Nicht (rechtzeitig) offen: den Versuch wirklich abbrechen — sonst
+        // könnte er später doch noch aufgehen, parallel zum nächsten.
+        synchronized(socketLock) { if (socket === ws) socket = null }
+        ws.cancel()
+        return null
     }
 
     private fun cancelSocket() {
         socketJob?.cancel()
         socketJob = null
-        try { socket?.close(1000, "settings-changed") } catch (_: Throwable) {}
+        val old = synchronized(socketLock) { socket.also { socket = null } }
+        try { old?.close(1000, "settings-changed") } catch (_: Throwable) {}
+    }
+
+    private fun isCurrent(webSocket: WebSocket): Boolean =
+        synchronized(socketLock) { socket === webSocket }
+
+    /** Socket als tot markieren — nur wenn es noch der aktuelle ist. */
+    private fun dropIfCurrent(webSocket: WebSocket): Boolean = synchronized(socketLock) {
+        if (socket !== webSocket) return false
         socket = null
+        true
     }
 
     private val listener = object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
-            _status.value = Status.Connected
+            if (!isCurrent(webSocket)) {
+                webSocket.cancel()
+                return
+            }
             // Send hello with whatever we currently know about the scooter.
             // scooterName = vom User vergebener Anzeigename (cached), Address
             // bleibt die echte MAC fuer Server-side-Logging/Trip-Tagging.
+            // hello VOR dem Status-Wechsel: wer auf Connected wartet
+            // (TripCoordinator, TripSyncer), sendet garantiert erst danach.
             val conn = ble.connection.value
             sendRaw(
                 StreamMessage.Hello(
@@ -179,12 +223,27 @@ class TelemetryStreamer @Inject constructor(
             // Send last known state + telemetry so the browser doesn't have to wait.
             sendState(conn)
             ble.telemetry.value?.let { sendTelemetry(it, System.currentTimeMillis()) }
+            synchronized(socketLock) {
+                if (socket === webSocket) _status.value = Status.Connected
+            }
+        }
+
+        override fun onMessage(webSocket: WebSocket, text: String) {
+            // Einzige Server→App-Nachricht bisher: {"type":"trip_ack","tripId":"local-12"}
+            try {
+                val obj = json.parseToJsonElement(text).jsonObject
+                if (obj["type"]?.jsonPrimitive?.content == "trip_ack") {
+                    obj["tripId"]?.jsonPrimitive?.content?.let { _tripAcks.tryEmit(it) }
+                }
+            } catch (t: Throwable) {
+                Log.w(TAG, "ws onMessage: unlesbar (${t.message})")
+            }
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            if (!dropIfCurrent(webSocket)) return
             Log.w(TAG, "ws onFailure: ${t.message}")
             _status.value = Status.Failed
-            socket = null
         }
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -192,8 +251,8 @@ class TelemetryStreamer @Inject constructor(
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            if (!dropIfCurrent(webSocket)) return
             _status.value = Status.Failed
-            socket = null
         }
     }
 
@@ -231,7 +290,7 @@ class TelemetryStreamer @Inject constructor(
     }
 
     private inline fun <reified T : StreamMessage> sendRaw(msg: T) {
-        val s = socket ?: return
+        val s = synchronized(socketLock) { socket } ?: return
         try {
             s.send(json.encodeToString<StreamMessage>(msg))
         } catch (t: Throwable) {
@@ -277,5 +336,9 @@ class TelemetryStreamer @Inject constructor(
 
     private companion object {
         const val TAG = "TelemetryStreamer"
+        const val OPEN_TIMEOUT_MS = 5_000L
+        const val MOVING_SPEED_KMH = 1f
+        const val MOVING_INTERVAL_MS = 200L
+        const val IDLE_INTERVAL_MS = 1_000L
     }
 }

@@ -68,7 +68,6 @@ class BleRepository @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob())
     private val manager = ScooterManager(context)
-    private var heartbeatJob: Job? = null
 
     /**
      * Sticky flag for the current process: true once the user pressed the
@@ -150,13 +149,15 @@ class BleRepository @Inject constructor(
     private val reconnectWake = newWakeLock("EpfCockpit:reconnect")
     /** Kurz nach einem Reconnect: Re-Auth (500 ms delay), Init-Burst, Heartbeat-Start absichern. */
     private val postConnectWake = newWakeLock("EpfCockpit:postconnect")
-    /** Adaptiv: nur nachdem der Heartbeat eine CPU-Suspend-Lücke gemessen hat. */
-    private val heartbeatWake = newWakeLock("EpfCockpit:heartbeat")
-    @Volatile private var heartbeatStarved = false
-    @Volatile private var lastHeartbeatTickElapsed = 0L
-    /** Schützt heartbeatJob/initBurstJob — Start (atReplies) und Stop (connEvents) laufen auf verschiedenen Threads. */
-    private val heartbeatLock = Any()
-    private var initBurstJob: Job? = null
+    /** Init-Burst + 600-ms-Heartbeat samt adaptiver WakeLock, siehe [HeartbeatController]. */
+    private val heartbeat = HeartbeatController(
+        scope = scope,
+        wakeLock = newWakeLock("EpfCockpit:heartbeat"),
+        writeFrame = { frame, label -> manager.writeLowFrame(frame, label) },
+        isManagerConnected = { manager.isConnected },
+        isStateConnected = { _connection.value is ConnectionState.Connected },
+        isScreenOn = { interactivity.isInteractive() },
+    )
 
     /**
      * Anfrage an eine laufende Episode, die in genau dem Moment endet: das
@@ -308,8 +309,8 @@ class BleRepository @Inject constructor(
                         // Heartbeat-Aussetzer VOR stopHeartbeat messen: kappt der Roller
                         // wegen eines CPU-Suspends, erreicht der Heartbeat-Loop seine
                         // eigene Messung hinter delay() nie mehr (er wird gecancelt).
-                        noteHeartbeatStarvationAtDisconnect()
-                        stopHeartbeat()
+                        heartbeat.noteStarvationAtDisconnect()
+                        heartbeat.stop()
                         // Nie ein Pending ueber den Link-Verlust schleppen —
                         // sonst sieht der User nach dem Disconnect noch ~2.7s
                         // ein Phantom-Pending bevor die Timeouts durch sind.
@@ -338,7 +339,7 @@ class BleRepository @Inject constructor(
                                 // Iteration noch das alte Connected sehen und die Episode
                                 // sofort als "reconnected" beenden. Den kurzen Failed+Idle-
                                 // Zwischenstand absorbiert die Gnadenfrist im ForegroundController.
-                                _connection.value = ConnectionState.Failed(friendlyDisconnectReason(event.reason))
+                                _connection.value = ConnectionState.Failed(BleErrors.friendlyDisconnectReason(event.reason))
                                 startEpisode(force = false, bgEligible = prev.authenticated || hadAuthSession)
                             }
                             // Abriss ohne etablierten Link (z.B. während Connecting):
@@ -351,7 +352,7 @@ class BleRepository @Inject constructor(
                         // oder eine bewusste Trennung überschreiben.
                         val c = _connection.value
                         if (c !is ConnectionState.Connected && !(c is ConnectionState.Disconnected && userDisconnected)) {
-                            _connection.value = ConnectionState.Failed(friendlyDisconnectReason(event.reason))
+                            _connection.value = ConnectionState.Failed(BleErrors.friendlyDisconnectReason(event.reason))
                         }
                     }
                 }
@@ -395,7 +396,7 @@ class BleRepository @Inject constructor(
                         // wake-up burst, then start the 600 ms heartbeat.
                         manager.sendAt(AtCommands.queryDevice())
                         manager.sendAt(AtCommands.queryVoiceOff())
-                        startInitBurstThenHeartbeat()
+                        heartbeat.startAfterInitBurst()
                     }
                     AtResponse.PinRejected -> {
                         hadAuthSession = false
@@ -405,7 +406,7 @@ class BleRepository @Inject constructor(
                         }
                     }
                     is AtResponse.VoiceOffState -> {
-                        android.util.Log.i("BleRepository", "voiceOff state from scooter: ${reply.on}")
+                        Log.i(TAG, "voiceOff state from scooter: ${reply.on}")
                         _voiceOff.value = reply.on
                     }
                     else -> Unit
@@ -496,37 +497,7 @@ class BleRepository @Inject constructor(
             _connection.value = ConnectionState.Disconnected
             throw ce
         } catch (t: Throwable) {
-            _connection.value = ConnectionState.Failed(friendlyError(t))
-        }
-    }
-
-    private fun friendlyError(t: Throwable): String {
-        val raw = (t.message ?: t::class.java.simpleName).orEmpty()
-        // Nordic surfaces GATT status codes either as numeric ("status 8")
-        // or as enum names ("GATT_CONN_TIMEOUT"). We catch both.
-        return when {
-            raw.contains("CONN_TIMEOUT", true) || raw.contains("status 8") ->
-                "Scooter nicht erreichbar – ist er eingeschaltet?"
-            raw.contains("TERMINATE_PEER_USER", true) || raw.contains("status 19") ->
-                "Scooter hat die Verbindung beendet"
-            raw.contains("CONN_TERMINATE", true) || raw.contains("status 22") ->
-                "Verbindung unterbrochen"
-            raw.contains("CONN_LMP_TIMEOUT", true) || raw.contains("status 34") ->
-                "Signal zu schwach – näher an den Scooter"
-            raw.contains("CONN_FAIL_ESTABLISH", true) || raw.contains("status 62") ->
-                "Verbindung konnte nicht aufgebaut werden"
-            raw.contains("ConnectionRequest", true) && raw.contains("cancelled", true) ->
-                "Verbindungsversuch abgebrochen"
-            raw.contains("DeviceDisconnectedException", true) ->
-                "Scooter hat die Verbindung beendet"
-            raw.contains("RequestFailedException", true) -> {
-                val status = Regex("status: (-?\\d+)").find(raw)?.groupValues?.get(1)
-                if (status != null) "Verbindung fehlgeschlagen (Code $status)"
-                else "Verbindung fehlgeschlagen"
-            }
-            raw.contains("timeout", true) -> "Zeitüberschreitung"
-            raw.isBlank() -> "Unbekannter Verbindungsfehler"
-            else -> raw
+            _connection.value = ConnectionState.Failed(BleErrors.friendlyError(t))
         }
     }
 
@@ -540,7 +511,7 @@ class BleRepository @Inject constructor(
         resumeOnForeground = false
         _hint.value = null
         cancelEpisode()
-        stopHeartbeat()
+        heartbeat.stop()
         manager.requestDisconnect()
         // Disconnected + keine Episode → der ForegroundController stoppt den FGS,
         // das BLE-Radio wird freigegeben, und der Roller advertised wieder für
@@ -1145,22 +1116,6 @@ class BleRepository @Inject constructor(
         }
     }
 
-    private fun friendlyDisconnectReason(reason: Int): String = when (reason) {
-        no.nordicsemi.android.ble.observer.ConnectionObserver.REASON_TERMINATE_PEER_USER ->
-            "Scooter hat die Verbindung beendet"
-        no.nordicsemi.android.ble.observer.ConnectionObserver.REASON_TERMINATE_LOCAL_HOST ->
-            "Verbindung vom Handy beendet"
-        no.nordicsemi.android.ble.observer.ConnectionObserver.REASON_LINK_LOSS ->
-            "Verbindung verloren – Signal weg"
-        no.nordicsemi.android.ble.observer.ConnectionObserver.REASON_TIMEOUT ->
-            "Verbindung verloren – Signal weg"
-        no.nordicsemi.android.ble.observer.ConnectionObserver.REASON_NOT_SUPPORTED ->
-            "Gerät nicht unterstützt"
-        no.nordicsemi.android.ble.observer.ConnectionObserver.REASON_CANCELLED ->
-            "Verbindungsversuch abgebrochen"
-        else -> "Verbindung unterbrochen (reason=$reason)"
-    }
-
     companion object {
         private const val TAG = "BleRepository"
         /** Pause zwischen Trip-Reset-Frame und dem Frame, das das Reset-Bit wieder löscht. */
@@ -1209,118 +1164,10 @@ class BleRepository @Inject constructor(
 
         private const val ACTIVE_BG_WAKE_MS = 8 * 60_000L
         private const val POST_CONNECT_WAKE_MS = 20_000L
-        private const val HB_STARVATION_MS = 2_000L
-        private const val HB_WAKE_TIMEOUT_MS = 60 * 60_000L
-        private const val HB_WAKE_RENEW_MARGIN_MS = 5 * 60_000L
 
         /** Soll der Foreground-Service laufen? (Single Source of Truth für Controller + Service.) */
         fun shouldKeepServiceAlive(c: ConnectionState, r: ReconnectStatus): Boolean =
             c is ConnectionState.Connected || c is ConnectionState.Connecting || r !is ReconnectStatus.Idle
-    }
-
-    /**
-     * Nach PinOk: Init-Burst (5× PULSE_INIT) und danach der Heartbeat — exakt
-     * wie die offizielle App. Der Burst-Job wird gehalten, damit ein Abriss
-     * währenddessen keinen verwaisten Heartbeat auf dem toten Link startet.
-     */
-    private fun startInitBurstThenHeartbeat() {
-        synchronized(heartbeatLock) {
-            initBurstJob?.cancel()
-            initBurstJob = scope.launch {
-                repeat(5) {
-                    manager.writeLowFrame(ControlFrames.PULSE_INIT, label = "init")
-                    delay(50)
-                }
-                startHeartbeat()
-            }
-        }
-    }
-
-    /**
-     * 600-ms-Heartbeat. Ohne ihn streamt der Roller keine Telemetrie und kappt
-     * nach ~30 s. delay() läuft auf der Uptime-Uhr, die im CPU-Suspend steht —
-     * wurde einmal eine Lücke > [HB_STARVATION_MS] gemessen (im Loop oder beim
-     * Abriss), hält der Loop ab dann bei Display aus eine Partial-WakeLock
-     * (adaptiv: nur Geräte, die es brauchen).
-     */
-    private fun startHeartbeat() {
-        synchronized(heartbeatLock) {
-            heartbeatJob?.cancel()
-            heartbeatJob = null
-            if (!manager.isConnected || _connection.value !is ConnectionState.Connected) {
-                Log.i(TAG, "heartbeat nicht gestartet — Link bereits weg")
-                return
-            }
-            lastHeartbeatTickElapsed = SystemClock.elapsedRealtime()
-            val job = scope.launch(start = CoroutineStart.LAZY) {
-                val self = currentCoroutineContext()[Job]
-                var acquiredAt = 0L
-                try {
-                    var last = SystemClock.elapsedRealtime()
-                    while (isActive) {
-                        if (_connection.value !is ConnectionState.Connected) break
-                        manager.writeLowFrame(ControlFrames.PULSE_HEARTBEAT, label = "hb")
-                        val now = SystemClock.elapsedRealtime()
-                        lastHeartbeatTickElapsed = now
-                        val wl = heartbeatWake
-                        if (wl != null) {
-                            val needLock = heartbeatStarved && !interactivity.isInteractive()
-                            // Vor Ablauf erneuern (non-refcounted acquire setzt nur den Timeout
-                            // zurück) — sonst fiele der Schutz jede Stunde kurz weg.
-                            if (needLock && (!wl.isHeld || now - acquiredAt > HB_WAKE_TIMEOUT_MS - HB_WAKE_RENEW_MARGIN_MS)) {
-                                wl.acquire(HB_WAKE_TIMEOUT_MS)
-                                acquiredAt = now
-                            } else if (!needLock && wl.isHeld) {
-                                wl.release()
-                            }
-                        }
-                        delay(600)
-                        val after = SystemClock.elapsedRealtime()
-                        if (!heartbeatStarved && after - last > HB_STARVATION_MS) {
-                            Log.w(TAG, "heartbeat starvation: ${after - last} ms (CPU-Suspend) → WakeLock ab jetzt bei Display aus")
-                            heartbeatStarved = true
-                        }
-                        last = after
-                    }
-                } finally {
-                    // Release NACH dem letzten acquire dieses Loops — ein release aus
-                    // stopHeartbeat() könnte sonst von einem späten acquire überholt werden.
-                    synchronized(heartbeatLock) {
-                        if (heartbeatJob === self || heartbeatJob == null) heartbeatWake?.release()
-                        if (heartbeatJob === self) heartbeatJob = null
-                    }
-                }
-            }
-            heartbeatJob = job
-            job.start()
-        }
-    }
-
-    private fun stopHeartbeat() {
-        synchronized(heartbeatLock) {
-            initBurstJob?.cancel()
-            initBurstJob = null
-            heartbeatJob?.cancel()
-            heartbeatJob = null
-            // Die WakeLock gibt das finally des Loops frei. Lief gar kein Loop,
-            // ist sie ohnehin nicht gehalten.
-        }
-    }
-
-    /**
-     * Beim Abriss: lag der letzte Heartbeat länger als [HB_STARVATION_MS] zurück,
-     * hat der CPU-Suspend den Heartbeat ausgehungert — genau der Fall, den der
-     * Loop selbst nicht mehr messen kann, weil er vor dem Ende seines delay()
-     * gecancelt wird.
-     */
-    private fun noteHeartbeatStarvationAtDisconnect() {
-        val running = synchronized(heartbeatLock) { heartbeatJob?.isActive == true }
-        if (!running || heartbeatStarved) return
-        val gap = SystemClock.elapsedRealtime() - lastHeartbeatTickElapsed
-        if (gap > HB_STARVATION_MS) {
-            Log.w(TAG, "heartbeat starvation beim Abriss erkannt: letzter Heartbeat vor $gap ms → WakeLock ab jetzt bei Display aus")
-            heartbeatStarved = true
-        }
     }
 
     // === High-level Pulse Plus controls (sniff-verified) ===

@@ -56,6 +56,16 @@ val resolvedSigning: ResolvedSigning? = run {
 }
 val hasReleaseKeystore = resolvedSigning != null
 
+// versionCode = Anzahl der Commits: steigt mit jedem Nightly, ohne dass jemand
+// daran denken muss. Ohne git (Tarball, flacher Checkout ohne Historie) → 1.
+val gitCommitCount: Int = runCatching {
+    providers.exec {
+        commandLine("git", "rev-list", "--count", "HEAD")
+        workingDir = rootProject.projectDir
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim().toInt()
+}.getOrDefault(1).coerceAtLeast(1)
+
 android {
     namespace = "eu.dns3d.epfcockpit"
     // compileSdk 37 nötig: die gebumpten Deps (compose 1.12, core-ktx 1.19.0,
@@ -67,7 +77,7 @@ android {
         applicationId = "eu.dns3d.epfcockpit"
         minSdk = 31
         targetSdk = 36
-        versionCode = 1
+        versionCode = gitCommitCount
         versionName = "0.1.0"
         vectorDrawables { useSupportLibrary = true }
     }
@@ -108,6 +118,11 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    testOptions {
+        // android.util.Log & Co. liefern in JVM-Unit-Tests Defaults statt zu werfen.
+        unitTests.isReturnDefaultValues = true
     }
 
     packaging {

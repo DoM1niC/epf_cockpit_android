@@ -85,6 +85,11 @@ jobs:
           EOF
           echo "Keystore-Größe: $(wc -c < "$KEYSTORE_FILE") Bytes"
 
+      - name: Unit-Tests
+        run: |
+          chmod +x ./gradlew
+          ./gradlew testDebugUnitTest --no-daemon --stacktrace
+
       - name: Build signierte Release-APK
         run: |
           chmod +x ./gradlew

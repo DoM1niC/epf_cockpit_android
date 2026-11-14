@@ -3,6 +3,58 @@
 Alle nennenswerten Änderungen an EPF Cockpit (App + Web-Dashboard).
 Neueste Einträge oben.
 
+## 2026-11-14
+
+### Behoben
+
+- **GPS-Route fehlte im Stand-Stop-Modus.** Die Standort-Aufzeichnung hielt
+  eine Fahrt im Stand-Stop-Modus für „geparkt“ (mehrdeutiges Status-Bit) und
+  speicherte keine Wegpunkte. Sie richtet sich jetzt nach dem echten
+  Park-Zustand.
+- **Live-Wegpunkte wurden vom Server verworfen**, bis die Fahrt zu Ende war.
+  Die App meldet eine Fahrt jetzt beim Losrollen an (`trip_start`); Telemetrie
+  und Wegpunkte werden ihr sofort zugeordnet.
+- **Web-Dashboard sprang auf „offline“**, wenn das Handy das Netz wechselte
+  (WLAN → Mobilfunk) und die alte Verbindung erst nach der neuen abbrach.
+- App: Ein verspätet schließender WebSocket hat die frische Verbindung nicht
+  mehr mit abgeräumt (unnötiger Reconnect).
+- App: Ein Trennen genau beim ersten Telemetrie-Frame konnte eine verwaiste
+  Fahrt hinterlassen.
+- *Einstellungen → Höchstgeschwindigkeit senden* verlangt jetzt wirklich
+  „geparkt“ — bisher reichte entsperrt im Stand-Stop-Modus.
+
+### Geändert
+
+- **Fahrten = Fahren, nicht Verbindungsdauer.** Eine Fahrt beginnt mit dem
+  ersten Rollen und endet mit dem letzten. Standzeit vor und nach der Fahrt
+  zählt weder in die Dauer noch in die Ø-Geschwindigkeit (die jetzt nur über
+  die Bewegungszeit gemittelt wird). Wegpunkte aus der Standzeit werden
+  verworfen.
+- **Ein kurzer Bluetooth-Abriss teilt die Fahrt nicht mehr.** Sie bleibt bis
+  zu 90 s offen; in der Lücke wird weder Energie noch Fahrzeit erfunden.
+- Ein Zurücksetzen der Tageskilometer mitten in der Fahrt verliert keine
+  Strecke mehr.
+- **Fahrten werden nur noch einmal zum Server geschickt.** Der Server
+  quittiert jede Fahrt (`trip_ack`); bisher ging bei jedem Verbindungsaufbau
+  die komplette Historie samt aller Wegpunkte erneut raus. Nach diesem Update
+  wird die Historie einmalig komplett nachgeliefert.
+- **Weniger Daten im Stand:** Telemetrie geht in Fahrt weiter mit 5 Hz zum
+  Server, im Stand nur noch mit 1 Hz.
+- **Server räumt auf:** Telemetrie, die zu keiner Fahrt gehört, wird nach
+  30 Tagen gelöscht (`TELEMETRY_RETENTION_DAYS`, `0` = nie). Telemetrie von
+  Fahrten bleibt dauerhaft.
+- App: weniger Rechenarbeit pro Telemetrie-Frame (kein Hex-Dump/Log-Format
+  mehr im Normalbetrieb).
+- `versionCode` ergibt sich aus der Anzahl der Commits.
+
+### Intern
+
+- Heartbeat (`HeartbeatController`) und Fehlertexte (`BleErrors`) aus dem
+  `BleRepository` herausgelöst.
+- Neue Tests: Telemetrie-Decoder, Fahrt-Aufzeichnung, Fehlertexte (App);
+  Trip-Lebenszyklus, Retention, Downsampling (Server, `npm test`). Die
+  App-Tests laufen im Nightly vor dem Release-Build.
+
 ## 2026-11-13
 
 ### Neu in der App

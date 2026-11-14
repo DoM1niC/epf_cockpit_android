@@ -121,9 +121,9 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
   Watt für Streaming-Captures (`?theme=…&accent=…&compact=…`-Query-Params).
 - **Sprache**: Komplett auf Deutsch übersetzt inkl. korrekter Umlaute, EU-
   Datum (`22.05.2026`) + 24h-Zeit überall (auch in den Chart-Achsen).
-- **Backfill**: Bei jedem Reconnect schickt die App alle in Room gespeicherten
-  Trips per `trip_end`-Event mit deterministischer ID `local-<rowId>` an den
-  Server. Idempotent dank `INSERT OR IGNORE`, also Mehrfach-Sends OK.
+- **Backfill**: Nach jedem Reconnect schickt die App die Trips nach, die der
+  Server noch nicht quittiert hat (`trip_end` mit deterministischer ID
+  `local-<rowId>`, Antwort `trip_ack`). Idempotent, Mehrfach-Sends sind OK.
 - **Shared-Token-Auth**: `INGEST_TOKEN` (App→Server) + `VIEW_TOKEN`
   (Server→Browser), beide optional, konstant-zeitig verglichen
   (`crypto.timingSafeEqual`). Token in der App wird als
@@ -232,7 +232,9 @@ ble/            — Protokoll-Layer + Nordic-BLE-Manager
    ControlFrames    Frame-Konstanten + AT-Kommando-Builder
    ScooterManager   Nordic BleManager-Subklasse mit fire-and-forget Writes
    BleRepository   Singleton, Hilt-injizierbar, Connection-State-Flow,
-                   Heartbeat-Loop, friendly error mapping
+                   Reconnect-Episode, Steuerbefehle
+   HeartbeatController  Init-Burst + 600-ms-Heartbeat, adaptive WakeLock
+   BleErrors        friendly error mapping
 data/           — DataStore (Settings), Room (Trip-Historie)
 di/             — Hilt-AppModule (Room-DB-Provider)
 ```

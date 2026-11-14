@@ -46,8 +46,25 @@ DashboardVM / BleRepository      TelemetryStreamer          Node-Server
 Änderungen in `SettingsStore.flow` (`streamingUrl`, `streamingEnabled`,
 `streamingToken`) und (re)connected den OkHttp-WebSocket entsprechend.
 
-Telemetrie wird **auf ~5 Hz** gethrottled, damit das Netzwerk-Volumen
-auch über Mobilfunk niedrig bleibt (typisch <2 kB/s).
+Telemetrie wird gethrottled: **~5 Hz in Fahrt, ~1 Hz im Stand** (unter
+1 km/h). Schaltvorgänge (Park, Licht, Modus) gehen sofort raus. So bleibt
+das Netzwerk-Volumen über Mobilfunk niedrig, und die Server-DB füllt sich
+nicht mit Standzeit.
+
+### Fahrten
+
+| Frame         | Richtung     | Wann                                                        |
+|---------------|--------------|-------------------------------------------------------------|
+| `trip_start`  | App → Server | Beim Losrollen, und erneut nach jedem WebSocket-Reconnect, solange die Fahrt läuft. Ab dann ordnet der Server Telemetrie und Live-Waypoints der Fahrt zu. |
+| `trip_end`    | App → Server | Fahrt abgeschlossen; self-contained inkl. `startedAt` und allen Waypoints (`locations[]`). Auch für den Backfill. |
+| `trip_cancel` | App → Server | Fahrt verworfen (< 10 m) — der Server löscht den offenen Eintrag. |
+| `trip_ack`    | Server → App | Quittung für ein verarbeitetes `trip_end`. Die App markiert die Fahrt als synchronisiert und schickt sie nicht erneut. |
+
+Eine Fahrt beginnt mit dem ersten Rollen (≥ 1 km/h) und endet mit dem
+letzten — nicht mit dem Verbinden/Trennen. Nach einem Funkabriss bleibt sie
+bis zu 90 s offen; kommt der Link zurück, ist es weiterhin eine Fahrt.
+Ändert sich die Streaming-URL, gelten alle Fahrten wieder als nicht
+synchronisiert und werden an den neuen Server nachgeliefert.
 
 ## Authentifizierung
 
