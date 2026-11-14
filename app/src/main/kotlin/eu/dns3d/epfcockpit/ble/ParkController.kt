@@ -49,13 +49,17 @@ class ParkController(
     private var sendJob: Job? = null
 
     init {
-        // Initial-Seed aus dem ersten Telemetrie-Frame. Bit 5 ist mehrdeutig
-        // (geparkt vs Stand), als Startwert aber besser als nichts — ein Tap
-        // korrigiert. Re-seedet auf Reconnect (Latch wird bei Disconnect null,
-        // Telemetrie wird genullt → nächstes Frame seedet neu).
+        // Initial-Seed aus dem ersten Telemetrie-Frame: [Telemetry.parked] löst
+        // die Mehrdeutigkeit von Bit 5 über das "entsperrt"-Bit des Statusworts
+        // auf. Danach führt der Intent (Kommandos) — die Telemetrie zeigt beim
+        // Umschalten kurz Zwischenzustände. Re-seedet auf Reconnect (Latch wird
+        // bei Disconnect null, Telemetrie wird genullt → nächstes Frame seedet neu).
         scope.launch {
             telemetry.filterNotNull().collect { t ->
-                if (_latch.value == null) _latch.value = t.parking
+                if (_latch.value == null) {
+                    Log.i(TAG, "park seed: status=0x%04X → parked=%b".format(t.statusWord, t.parked))
+                    _latch.value = t.parked
+                }
             }
         }
     }

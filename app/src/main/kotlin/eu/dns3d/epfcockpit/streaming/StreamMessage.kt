@@ -40,7 +40,6 @@ sealed interface StreamMessage {
         val parking: Boolean,
         val rideModeStand: Boolean?,
         val lightOn: Boolean? = null,
-        val motorTempC: Double? = null,
     ) : StreamMessage
 
     @Serializable

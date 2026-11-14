@@ -418,8 +418,6 @@ fun SettingsScreen(
 
             SectionCard("Roller", leadingIcon = Icons.Filled.ElectricScooter) {
                 ScooterSection(
-                    autoLightOnUnlock = state.autoLightOnUnlock,
-                    onAutoLightChange = vm::setAutoLightOnUnlock,
                     canResetTrip = state.authenticated && state.parkingKnown && state.standing,
                     authenticated = state.authenticated,
                     tripKm = state.tripKm,
@@ -508,8 +506,6 @@ fun SettingsScreen(
 
 @Composable
 private fun ScooterSection(
-    autoLightOnUnlock: Boolean,
-    onAutoLightChange: (Boolean) -> Unit,
     canResetTrip: Boolean,
     authenticated: Boolean,
     tripKm: Float?,
@@ -517,22 +513,6 @@ private fun ScooterSection(
 ) {
     var confirmReset by remember { mutableStateOf(false) }
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text("Licht beim Entsperren einschalten", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Schaltet das Frontlicht automatisch ein, sobald du den Roller " +
-                    "entsperrst (Parking aus) — so vergisst du es nicht. Ausschalten " +
-                    "kannst du es jederzeit über den Licht-Schalter im Dashboard.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Spacer(Modifier.size(12.dp))
-        Switch(checked = autoLightOnUnlock, onCheckedChange = onAutoLightChange)
-    }
-
-    Spacer(Modifier.height(16.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(

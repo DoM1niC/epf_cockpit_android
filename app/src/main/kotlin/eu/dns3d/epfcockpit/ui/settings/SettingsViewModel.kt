@@ -49,7 +49,6 @@ data class SettingsUiState(
     /** Tageskilometer laut Roller, `null` ohne Telemetrie. */
     val tripKm: Float? = null,
     /** Frontlicht beim Entsperren automatisch einschalten. */
-    val autoLightOnUnlock: Boolean = false,
     /** Opt-in für GPS-Waypoints pro Trip, default OFF. */
     val trackLocation: Boolean = false,
     /** Opt-in: GPS auch im Idle/Parking an das Dashboard senden (nur live, nicht in Room). */
@@ -90,7 +89,6 @@ class SettingsViewModel @Inject constructor(
             parkingKnown = parkDisp != null,
             standing = tele != null && tele.speedKmh <= 1.0f,
             tripKm = tele?.tripKm,
-            autoLightOnUnlock = s.autoLightOnUnlock,
             trackLocation = s.trackLocation,
             trackLocationIdle = s.trackLocationIdle,
             scooterFriendlyName = s.scooterFriendlyName.orEmpty(),
@@ -173,9 +171,6 @@ class SettingsViewModel @Inject constructor(
         ble.setMaxSpeed(kmh)
     }
 
-    fun setAutoLightOnUnlock(enabled: Boolean) {
-        viewModelScope.launch { store.setAutoLightOnUnlock(enabled) }
-    }
 
     /** Tageskilometer am Roller auf 0 (UI fragt vorher nach). */
     fun resetTrip() {

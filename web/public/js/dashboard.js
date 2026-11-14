@@ -667,12 +667,6 @@
     setText('t-amp',  num(t.currentA, 1));
     setText('t-temp', num(t.controllerTempC, 0));
 
-    // Motor-Temperatur: nur anzeigen, wenn die App sie mitschickt.
-    const hasMotor = isNum(t.motorTempC);
-    const motorWrap = $('motor-temp-wrap');
-    if (motorWrap) motorWrap.hidden = !hasMotor;
-    if (hasMotor) setText('t-motor-temp', num(t.motorTempC, 0));
-
     // Kilometerzähler (tripKm = Tageskilometer, totalKm = Gesamt)
     setText('t-trip-km',  num(t.tripKm, 2));
     setText('t-total-km', num(t.totalKm, 1));

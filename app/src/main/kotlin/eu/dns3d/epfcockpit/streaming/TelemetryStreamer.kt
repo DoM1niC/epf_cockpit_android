@@ -271,10 +271,9 @@ class TelemetryStreamer @Inject constructor(
                 // Park + Mode wie in der App: das Telemetrie-Bit 5 ist mehrdeutig
                 // (geparkt ODER Stand-Mode) — daher kam im Web „Parking: an“ bei
                 // entsperrtem Roller im Stand-Mode.
-                parking = ble.parkingDisplay.value ?: t.parking,
+                parking = ble.parkingDisplay.value ?: t.parked,
                 rideModeStand = ble.rideModeStand,
                 lightOn = ble.lightOn.value,
-                motorTempC = t.motorTempC.toDouble(),
             )
         )
     }

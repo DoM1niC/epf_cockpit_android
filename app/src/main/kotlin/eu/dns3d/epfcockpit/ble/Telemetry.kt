@@ -16,7 +16,9 @@ import eu.dns3d.epfcockpit.BuildConfig
  *           Hobbywing fixed-point. NOT the 0.01 A/LSB that ZydDash
  *           documents for the ePF-1 — that scale reads ~36 % too low here)
  *  [14]     controller/ESC temperature °C (signed)
- *  [15]     motor temperature °C (signed)
+ *  [15]     motor temperature °C (signed) laut offizieller App — der Pulse
+ *           Plus sendet hier aber konstant 0x16 (22), offenbar ohne
+ *           Motor-Sensor. Wird deshalb dekodiert, aber nirgends angezeigt.
  *  [16..17] trip km   u16 * 0.1
  *  [18..20] total km  u24 * 0.1
  *
@@ -50,7 +52,23 @@ data class Telemetry(
     val watts: Float get() = voltage * currentAmps
     val absWatts: Float get() = kotlin.math.abs(watts)
     val isRegenerating: Boolean get() = currentAmps < -0.05f
+    /** Roh-Bit 5: geparkt ODER entsperrt im Stand-Stop-Modus — allein mehrdeutig, siehe [parked]. */
     val parking: Boolean get() = (statusByte and 0x20) != 0
+
+    /**
+     * Statuswort-Bit 11 (0x0800): Roller ist entsperrt. Live am Pulse Plus
+     * beobachtet (Stand-Stop-Modus, viele Park/Entsperr-Zyklen): geparkt
+     * `0x0422`, entsperrt `0x0C22` / mit Licht `0x0C26`. Das Bit löst die
+     * Mehrdeutigkeit von Bit 5 auf.
+     */
+    val unlockedFlag: Boolean get() = (statusWord and 0x0800) != 0
+
+    /**
+     * Echter Park-Zustand aus der Telemetrie: Bit 5 gesetzt UND nicht als
+     * entsperrt gemeldet. Bit 5 = 0 ist immer entsperrt (Kick-Modus). Fehlt das
+     * Statuswort (kurzes Frame), gilt Bit 5 allein — also die sichere Seite.
+     */
+    val parked: Boolean get() = parking && !unlockedFlag
     /** u16-Bit 2 = `headLightSw` laut dekompilierter offizieller App. */
     val headlightOn: Boolean get() = (statusByte and 0x04) != 0
 }

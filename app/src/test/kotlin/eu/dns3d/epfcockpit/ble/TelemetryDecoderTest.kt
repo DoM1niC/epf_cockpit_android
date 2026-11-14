@@ -100,6 +100,21 @@ class TelemetryDecoderTest {
     }
 
     @Test
+    fun `Park-Zustand - Bit 11 des Statusworts loest die Mehrdeutigkeit von Bit 5 auf`() {
+        fun parked(word: Int) = TelemetryDecoder.decode(frame(statusWord = word))!!.parked
+        // Live am Pulse Plus mitgeschnitten (Stand-Stop-Modus):
+        assertTrue(parked(0x0422))    // geparkt
+        assertFalse(parked(0x0C22))   // entsperrt, Licht aus
+        assertFalse(parked(0x0C26))   // entsperrt, Licht an
+        assertFalse(parked(0x0CA2))   // Zwischenzustand direkt nach dem Entsperren
+        assertTrue(parked(0x04A2))    // Zwischenzustand direkt nach dem Parken
+        // Kick-Modus entsperrt: Bit 5 aus genügt.
+        assertFalse(parked(0x0002))
+        // Kurzes Frame ohne Statuswort → Status 0 → entsperrt laut Bit 5 (wie bisher).
+        assertFalse(TelemetryDecoder.decode(frame(statusWord = 0x0422, size = 22))!!.parked)
+    }
+
+    @Test
     fun `Akku wird auf 0 bis 100 begrenzt`() {
         assertEquals(100, TelemetryDecoder.decode(frame(battery = 130))!!.batteryPercent)
     }

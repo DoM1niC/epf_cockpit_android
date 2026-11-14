@@ -175,7 +175,6 @@ private fun coreStats(t: Telemetry?): List<StatSpec> = listOf(
     StatSpec("Spannung", "%.1f".format(t?.voltage ?: 0f), "V", Icons.Filled.Bolt),
     StatSpec("Strom", "%.1f".format(t?.currentAmps ?: 0f), "A", Icons.Filled.ElectricalServices),
     StatSpec("Controller", "${t?.controllerTempC ?: 0}", "°C", Icons.Filled.Thermostat),
-    StatSpec("Motor", "${t?.motorTempC ?: 0}", "°C", Icons.Filled.Thermostat),
     StatSpec(
         "Leistung",
         "%.0f".format(t?.absWatts ?: 0f),

@@ -5,8 +5,34 @@ Neueste Einträge oben.
 
 ## 2026-11-14
 
+### Neu in der App
+
+- **Das Licht merkt sich seinen Zustand.** War das Frontlicht an, als du
+  geparkt hast, die Verbindung abriss oder der Roller ausgeschaltet wurde, geht
+  es beim Entsperren bzw. Wiederverbinden von selbst wieder an. Der Merker ist
+  dauerhaft gespeichert (übersteht auch einen App-Neustart) und gilt 12
+  Stunden — abends geparkt heißt nicht Licht am nächsten Morgen.
+- **Die Option „Licht beim Entsperren einschalten“ entfällt** — der Merker
+  ersetzt sie. Wer immer mit Licht fahren will, schaltet es einmal ein.
+- **Park-Zustand wird jetzt richtig erkannt.** Im Stand-Stop-Modus zeigte die
+  App nach dem Verbinden oder einem App-Neustart „geparkt“, obwohl der Roller
+  entsperrt war — das bisher ausgewertete Status-Bit sieht in beiden Fällen
+  gleich aus. Ein weiteres Bit im Statuswort (Bit 11, live am Pulse Plus
+  mitgeschnitten) meldet „entsperrt“ eindeutig; die App liest den Zustand beim
+  Verbinden jetzt daraus.
+
+### Entfernt
+
+- **Motor-Temperatur** aus App und Web-Dashboard: der Pulse Plus sendet in
+  diesem Feld konstant 22 °C, also keinen echten Messwert — die originale
+  EPF-App zeigt die Motor-Temperatur ebenfalls nicht an. Die
+  Controller-Temperatur bleibt.
+
 ### Behoben
 
+- **Licht ging beim Entsperren kurz an und sofort wieder aus**, wenn man kurz
+  nach dem Parken entsperrte: ein noch „geparktes“ Telemetrie-Frame kippte den
+  Licht-Zustand zwischen den drei Sendeversuchen des Entsperr-Befehls.
 - **GPS-Route fehlte im Stand-Stop-Modus.** Die Standort-Aufzeichnung hielt
   eine Fahrt im Stand-Stop-Modus für „geparkt“ (mehrdeutiges Status-Bit) und
   speicherte keine Wegpunkte. Sie richtet sich jetzt nach dem echten

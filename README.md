@@ -12,7 +12,7 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
 - Großer Tacho-Ring mit animiertem Sweep-Gradient
 - Akku-Ring mit Farbwechsel (rot → orange → grün)
 - Live-Leistung (Watt = U·I), Rekuperations-Anzeige
-- Spannung, Strom, Controller- und Motor-Temperatur, Trip- und Gesamt-Kilometer
+- Spannung, Strom, Controller-Temperatur, Trip- und Gesamt-Kilometer
 - Bildschirm bleibt im Cockpit an (kein versehentliches Dimmen während der Fahrt)
 - **Layout-Switcher** (Settings): vier Dashboard-Layouts — **Standard** (großer
   Tacho + Akku, scrollbar), **Kompakt** (alle Werte ohne Scrollen auf einem
@@ -29,9 +29,9 @@ Material-3-Expressive-Dashboard mit dynamischem Farbschema.
 - **Frontlicht** ein/aus — Schalter im Dashboard (nur entsperrt; geparkt
   ignoriert der Controller das Licht und schaltet es beim Parken selbst ab),
   Zustand wird live aus der Telemetrie gelesen
-- **Licht beim Entsperren** (Settings, standardmäßig aus) — schaltet das
-  Frontlicht automatisch mit ein, sobald der Roller entsperrt wird; manuell
-  jederzeit wieder ausschaltbar
+- **Licht-Merker** — die App merkt sich, ob das Frontlicht bei entsperrtem
+  Roller an war, und stellt es beim Entsperren bzw. Wiederverbinden wieder her
+  (12 Stunden gültig, übersteht App-Neustart)
 - **Tageskilometer zurücksetzen** (Settings → Roller, mit Rückfrage, nur im
   Stand) — setzt den Trip-Zähler am Roller auf 0
 - **Max-Geschwindigkeit** — Slider 1..30 km/h in den Settings, schickt einen

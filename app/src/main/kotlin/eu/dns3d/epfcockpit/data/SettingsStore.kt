@@ -4,10 +4,12 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -70,9 +72,6 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
          *  Wird im Hello/State-Frame ans Dashboard geschickt — null = Dashboard
          *  zeigt "E-Scooter" als Fallback. */
         val scooterFriendlyName: String?,
-        /** Beim Entsperren (Parking aus) das Frontlicht automatisch einschalten.
-         *  Default aus — kein Lichtzwang, manuell bleibt es jederzeit schaltbar. */
-        val autoLightOnUnlock: Boolean,
     )
 
     val flow: Flow<Snapshot> = context.dataStore.data.map { p ->
@@ -97,7 +96,6 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
             trackLocation = p[KEY_TRACK_LOCATION] ?: false,
             trackLocationIdle = p[KEY_TRACK_LOCATION_IDLE] ?: false,
             scooterFriendlyName = p[KEY_SCOOTER_FRIENDLY_NAME]?.takeIf { it.isNotBlank() },
-            autoLightOnUnlock = p[KEY_AUTO_LIGHT_ON_UNLOCK] ?: false,
         )
     }
 
@@ -183,8 +181,24 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         context.dataStore.edit { p -> p[KEY_TRACK_LOCATION_IDLE] = enabled }
     }
 
-    suspend fun setAutoLightOnUnlock(enabled: Boolean) {
-        context.dataStore.edit { p -> p[KEY_AUTO_LIGHT_ON_UNLOCK] = enabled }
+    /**
+     * Zuletzt gewünschter Licht-Zustand bei entsperrtem Roller samt Zeitpunkt
+     * (Wall-Clock ms). Bewusst nicht im [Snapshot]: er ändert sich bei jedem
+     * Schalten und soll nicht jedes Mal alle Settings-Beobachter wecken.
+     */
+    suspend fun lastLightState(): Pair<Boolean, Long>? {
+        val p = context.dataStore.data.first()
+        val on = p[KEY_LAST_LIGHT] ?: return null
+        return on to (p[KEY_LAST_LIGHT_AT] ?: 0L)
+    }
+
+    suspend fun setLastLightState(on: Boolean, atMillis: Long) {
+        context.dataStore.edit { p ->
+            p[KEY_LAST_LIGHT] = on
+            p[KEY_LAST_LIGHT_AT] = atMillis
+            // Früheres Setting „Licht beim Entsperren einschalten“ — entfällt.
+            p.remove(KEY_AUTO_LIGHT_ON_UNLOCK)
+        }
     }
 
     suspend fun setScooterFriendlyName(name: String?) {
@@ -215,5 +229,7 @@ class SettingsStore @Inject constructor(@ApplicationContext private val context:
         val KEY_TRACK_LOCATION_IDLE = booleanPreferencesKey("track_location_idle")
         val KEY_SCOOTER_FRIENDLY_NAME = stringPreferencesKey("scooter_friendly_name")
         val KEY_AUTO_LIGHT_ON_UNLOCK = booleanPreferencesKey("auto_light_on_unlock")
+        val KEY_LAST_LIGHT = booleanPreferencesKey("last_light_on")
+        val KEY_LAST_LIGHT_AT = longPreferencesKey("last_light_at")
     }
 }

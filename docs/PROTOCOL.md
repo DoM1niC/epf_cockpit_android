@@ -145,7 +145,7 @@ Off  Bytes                       Bedeutung
                                  (negativ = Rekuperation; Hobbywing-Festkomma
                                  mit 6 Fraktionsbits — NICHT * 0.01 wie ePF-1)
 14   <esc_temp>                  Controller-Temperatur in °C (signed byte)
-15   <motor_temp>                Motor-Temperatur in °C (signed byte)
+15   <motor_temp>                Motor-Temperatur in °C (signed byte) — Pulse Plus sendet konstant 0x16 (22), wird nicht angezeigt
 16-17 <trip_be>                  Trip-km (u16 BE) * 0.1
 18-20 <total_be>                 Gesamt-km (u24 BE) * 0.1
 21-22 <status_be>                Status-Bitfeld u16 BE (siehe unten)
@@ -167,7 +167,7 @@ Die offizielle App liest die Bytes 21-22 als **ein u16 BE Bitfeld**
 | 5       | [22]·5    | `bootMode`         | = unser „Park-Echo", siehe unten    |
 | 6       | [22]·6    | `metricInchSw`     |                                     |
 | 9       | [21]·1    | `cruiseControlSw`  |                                     |
-| 11      | [21]·3    | `lockSw`           | das beobachtete `04`↔`0C`-Flackern  |
+| 11      | [21]·3    | `lockSw`           | **1 = entsperrt.** Live verifiziert: geparkt `0x0422`, entsperrt `0x0C22`/`0x0C26` — löst die Mehrdeutigkeit von Bit 5 auf (`Telemetry.parked`) |
 | 15      | [21]·7    | `atmosphereLightSw`|                                     |
 
 Werte aus dem Sniff (Byte 22):

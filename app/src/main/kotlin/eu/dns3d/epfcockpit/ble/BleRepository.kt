@@ -243,8 +243,27 @@ class BleRepository @Inject constructor(
         lightPendingUntil = SystemClock.elapsedRealtime() + LIGHT_CONFIRM_MS
     }
 
-    /** Setting „Licht beim Entsperren einschalten" (Live-Cache). */
-    @Volatile private var cachedAutoLightOnUnlock: Boolean = false
+    /**
+     * Licht-Merker: der zuletzt gewünschte Licht-Zustand BEI ENTSPERRTEM Roller
+     * (Wall-Clock-Zeitstempel, persistiert). Der Controller schaltet das Licht
+     * beim Parken selbst ab und startet nach Aus/Ein dunkel — beim Entsperren
+     * bzw. Wiederverbinden stellen wir den gemerkten Zustand wieder her.
+     */
+    @Volatile private var rememberedLight: Boolean = false
+    @Volatile private var rememberedLightAt = 0L
+    private var rememberLightJob: Job? = null
+
+    private fun rememberLight(on: Boolean) {
+        val now = System.currentTimeMillis()
+        rememberedLight = on
+        rememberedLightAt = now
+        scope.launch { settings.setLastLightState(on, now) }
+    }
+
+    private fun rememberedLightAgeMs(): Long = System.currentTimeMillis() - rememberedLightAt
+
+    /** Pro Verbindung einmal: Licht nach dem Verbinden einschalten (siehe init). */
+    @Volatile private var connectLightHandled = false
 
     init {
         // Settings → Cache spiegeln, damit Frame-Builder synchron lesen können
@@ -254,12 +273,20 @@ class BleRepository @Inject constructor(
             settings.flow.collect { snap ->
                 cachedMaxSpeedKmh = snap.gear3MaxKmh.coerceIn(1, 40)
                 cachedRideModeStand = snap.rideModeStand
-                cachedAutoLightOnUnlock = snap.autoLightOnUnlock
                 val old = cachedSnap
                 cachedSnap = snap
                 if (old != null && (old.reconnectWhileLocked != snap.reconnectWhileLocked ||
                         old.autoConnect != snap.autoConnect)) {
                     policyTick.trySend(Unit)
+                }
+            }
+        }
+        // Licht-Merker aus dem letzten Lauf laden (überlebt App-Neustart).
+        scope.launch {
+            runCatching { settings.lastLightState() }.getOrNull()?.let { (on, at) ->
+                if (rememberedLightAt == 0L) {
+                    rememberedLight = on
+                    rememberedLightAt = at
                 }
             }
         }
@@ -288,6 +315,40 @@ class BleRepository @Inject constructor(
                 if (_lightOn.value != bit && SystemClock.elapsedRealtime() >= lightPendingUntil) {
                     Log.i(TAG, "headlight (telemetry): ${_lightOn.value} → $bit")
                     _lightOn.value = bit
+                    // Am Roller selbst geschaltet → merken. Erst nach kurzer
+                    // Beruhigung und nur entsperrt + verbunden: weder das
+                    // Abschalten durch den Controller beim Parken noch ein
+                    // letztes Frame beim Ausschalten des Rollers sollen den
+                    // Merker überschreiben.
+                    rememberLightJob?.cancel()
+                    rememberLightJob = scope.launch {
+                        delay(LIGHT_REMEMBER_SETTLE_MS)
+                        if (_lightOn.value == bit && manager.isConnected &&
+                            _connection.value is ConnectionState.Connected &&
+                            parkController.parkingDisplay.value == false && rememberedLight != bit
+                        ) {
+                            Log.i(TAG, "light memory (am Roller geschaltet): $bit")
+                            rememberLight(bit)
+                        }
+                    }
+                }
+            }
+        }
+        // Licht nach dem Verbinden wiederherstellen: war es zuletzt an und der
+        // Roller ist jetzt entsperrt, aber dunkel (Roller oder App aus- und
+        // wieder eingeschaltet), einmalig einschalten. Geparkt macht das später
+        // das Entsperren. Nur einmal pro Verbindung — schaltet der User danach
+        // aus, bleibt es aus.
+        scope.launch {
+            combine(_connection, parkController.parkingDisplay, _lightOn) { c, park, light ->
+                Triple((c as? ConnectionState.Connected)?.authenticated == true, park, light)
+            }.collect { (authenticated, park, light) ->
+                if (!authenticated || park == null || light == null || connectLightHandled) return@collect
+                connectLightHandled = true
+                // `park` ist hier der frische Seed aus der Telemetrie (echter Zustand).
+                if (LightPolicy.lightOnAfterConnect(park, light, rememberedLight, rememberedLightAgeMs())) {
+                    Log.i(TAG, "light memory: verbunden + entsperrt + Licht aus → Licht wieder an")
+                    setLight(true)
                 }
             }
         }
@@ -316,6 +377,10 @@ class BleRepository @Inject constructor(
                         // ein Phantom-Pending bevor die Timeouts durch sind.
                         parkController.onDisconnected()
                         _lightOn.value = null
+                        connectLightHandled = false
+                        rememberLightJob?.cancel()
+                        // Zeitstempel auffrischen: die 12 h zählen ab dem Abriss.
+                        if (rememberedLight) rememberLight(true)
                         when {
                             event.userInitiated || userDisconnected ->
                                 _connection.value = ConnectionState.Disconnected
@@ -1122,6 +1187,8 @@ class BleRepository @Inject constructor(
         private const val TRIP_RESET_RELEASE_MS = 600L
         /** So lange gilt ein kommandierter Licht-Zustand, bevor die Telemetrie gewinnt. */
         private const val LIGHT_CONFIRM_MS = 2_000L
+        /** Am Roller geschaltetes Licht gilt erst nach dieser Beruhigungszeit als gewünscht. */
+        private const val LIGHT_REMEMBER_SETTLE_MS = 3_000L
 
         /**
          * Maximale AKTIVE Reconnect-Versuche pro Runde, bevor wir aufgeben und
@@ -1194,20 +1261,33 @@ class BleRepository @Inject constructor(
         )
 
     /**
-     * Entsperren schaltet das Licht ein, wenn der User das in den Settings
-     * aktiviert hat. Liefert das Licht-Bit für das Entsperr-Frame und zieht
+     * Entsperren stellt das Licht wieder her, wenn es zuletzt bei entsperrtem
+     * Roller an war. Liefert das Licht-Bit für das Entsperr-Frame und zieht
      * den Licht-Zustand optimistisch mit.
      */
     private fun lightForUnlock(): Boolean {
-        if (cachedAutoLightOnUnlock && !currentLight()) {
-            Log.i(TAG, "auto-light: Licht beim Entsperren an")
-            commandLight(true)
-        }
-        return currentLight()
+        val want = LightPolicy.lightOnUnlock(currentLight(), rememberedLight, rememberedLightAgeMs())
+        if (want && !currentLight()) Log.i(TAG, "light memory: Licht beim Entsperren wieder an")
+        // IMMER kommandieren, auch wenn der Wert schon stimmt: das Entsperr-Frame
+        // geht dreimal raus und wird jedes Mal frisch gebaut. Ohne Schonfrist
+        // konnte ein noch "geparktes" Telemetrie-Frame (Licht aus) dazwischen den
+        // Zustand kippen — der dritte Resend schaltete das Licht dann wieder aus.
+        commandLight(want)
+        return want
+    }
+
+    /** Vor dem Parken: Licht-Zustand merken (nur beim Übergang, nicht bei erneutem Tippen). */
+    private fun rememberLightForPark() {
+        if (parkController.parkingDisplay.value != false) return
+        rememberLightJob?.cancel()
+        if (rememberedLight != currentLight() || currentLight()) rememberLight(currentLight())
+        // Der Controller schaltet das Licht beim Parken ab — sofort mitziehen,
+        // statt bis zum nächsten Telemetrie-Frame einen veralteten Wert zu halten.
+        commandLight(false)
     }
 
     fun setParking(on: Boolean) {
-        if (!on) lightForUnlock()
+        if (on) rememberLightForPark() else lightForUnlock()
         // Park-OFF im aktuell gewählten Mode senden, damit ein Park-OFF nicht
         // ungewollt auf Kick wechselt: der generische parkingOff-Frame (0x82)
         // IST der Kick-Frame. Stand → 0xA2 (entparkt + Stand), Kick → 0x82.
@@ -1275,6 +1355,8 @@ class BleRepository @Inject constructor(
     fun setLight(on: Boolean) {
         if (parkController.parkingDisplay.value != false) return
         commandLight(on)
+        rememberLightJob?.cancel()
+        rememberLight(on)
         controlJob?.cancel()
         controlJob = scope.launch {
             repeat(2) { i ->
